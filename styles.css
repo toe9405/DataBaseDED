@@ -1,0 +1,376 @@
+/* 
+ * Military Personnel Management System - Stylesheet
+ * ธีมระบบสารสนเทศกำลังพล กรมการพลังงานทหาร (Defense Energy Department)
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Prompt:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Sarabun:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --font-main: 'Prompt', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-formal: 'Sarabun', -apple-system, BlinkMacSystemFont, sans-serif;
+  
+  /* Military Color Palette */
+  --bg-dark: #090e17;
+  --bg-card: #111a2e;
+  --bg-card-hover: #16223b;
+  --bg-card-border: #1e2c4d;
+  
+  --army-primary: #15803d;
+  --army-accent: #22c55e;
+  --army-glow: rgba(34, 197, 94, 0.25);
+  
+  --navy-primary: #1d4ed8;
+  --navy-accent: #3b82f6;
+  --navy-glow: rgba(59, 130, 246, 0.25);
+  
+  --airforce-primary: #0284c7;
+  --airforce-accent: #38bdf8;
+  --airforce-glow: rgba(56, 189, 248, 0.25);
+
+  --civil-primary: #7c3aed;
+  --civil-accent: #a78bfa;
+  --civil-glow: rgba(167, 139, 250, 0.25);
+
+  --employee-primary: #d97706;
+  --employee-accent: #fbbf24;
+  --employee-glow: rgba(251, 191, 36, 0.25);
+
+  --gold-primary: #d97706;
+  --gold-accent: #fbbf24;
+  --gold-glow: rgba(251, 191, 36, 0.3);
+}
+
+* {
+  box-sizing: border-box;
+  font-family: var(--font-main);
+}
+
+body {
+  background-color: var(--bg-dark);
+  color: #f1f5f9;
+  min-height: 100vh;
+  overflow-x: hidden;
+  background-image: 
+    radial-gradient(circle at 10% 20%, rgba(29, 78, 216, 0.08) 0%, transparent 40%),
+    radial-gradient(circle at 90% 80%, rgba(21, 128, 61, 0.08) 0%, transparent 40%),
+    radial-gradient(circle at 50% 50%, rgba(217, 119, 6, 0.06) 0%, transparent 60%);
+  background-attachment: fixed;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0b1120;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* Glassmorphism Components */
+.glass-panel {
+  background: rgba(17, 26, 46, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--bg-card-border);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+.glass-nav {
+  background: rgba(9, 14, 23, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Branch specific borders & cards */
+.branch-card {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: linear-gradient(180deg, rgba(22, 34, 59, 0.9) 0%, rgba(13, 20, 36, 0.95) 100%);
+}
+
+.branch-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.4);
+}
+
+.card-army:hover {
+  border-color: rgba(34, 197, 94, 0.5);
+  box-shadow: 0 10px 25px var(--army-glow);
+}
+.card-navy:hover {
+  border-color: rgba(59, 130, 246, 0.5);
+  box-shadow: 0 10px 25px var(--navy-glow);
+}
+.card-airforce:hover {
+  border-color: rgba(56, 189, 248, 0.5);
+  box-shadow: 0 10px 25px var(--airforce-glow);
+}
+.card-civil:hover {
+  border-color: rgba(167, 139, 250, 0.5);
+  box-shadow: 0 10px 25px var(--civil-glow);
+}
+.card-employee:hover {
+  border-color: rgba(251, 191, 36, 0.5);
+  box-shadow: 0 10px 25px var(--employee-glow);
+}
+
+/* Branch Tags & Badges */
+.badge-army {
+  background: rgba(21, 128, 61, 0.2);
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.4);
+}
+
+.badge-navy {
+  background: rgba(29, 78, 216, 0.2);
+  color: #60a5fa;
+  border: 1px solid rgba(96, 165, 250, 0.4);
+}
+
+.badge-airforce {
+  background: rgba(2, 132, 199, 0.2);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+}
+
+.badge-civil {
+  background: rgba(124, 58, 237, 0.2);
+  color: #c4b5fd;
+  border: 1px solid rgba(167, 139, 250, 0.4);
+}
+
+.badge-employee {
+  background: rgba(217, 119, 6, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+}
+
+/* Branch Filter Buttons */
+.tab-btn {
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tab-btn:hover {
+  transform: translateY(-1px);
+}
+
+.tab-btn.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.tab-btn.active::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 15%;
+  right: 15%;
+  height: 3px;
+  border-radius: 3px;
+}
+
+.tab-army.active::after { background: var(--army-accent); box-shadow: 0 0 10px var(--army-accent); }
+.tab-navy.active::after { background: var(--navy-accent); box-shadow: 0 0 10px var(--navy-accent); }
+.tab-airforce.active::after { background: var(--airforce-accent); box-shadow: 0 0 10px var(--airforce-accent); }
+.tab-civil.active::after { background: var(--civil-accent); box-shadow: 0 0 10px var(--civil-accent); }
+.tab-employee.active::after { background: var(--employee-accent); box-shadow: 0 0 10px var(--employee-accent); }
+.tab-all.active::after { background: var(--gold-accent); box-shadow: 0 0 10px var(--gold-accent); }
+
+/* Rank Tier Badges (Gold, Silver, Bronze, Standard, Staff) */
+.tier-general {
+  background: linear-gradient(135deg, rgba(217, 119, 6, 0.3) 0%, rgba(245, 158, 11, 0.1) 100%);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.5);
+  box-shadow: 0 0 12px rgba(251, 191, 36, 0.2);
+}
+
+.tier-field {
+  background: linear-gradient(135deg, rgba(148, 163, 184, 0.2) 0%, rgba(203, 213, 225, 0.05) 100%);
+  color: #e2e8f0;
+  border: 1px solid rgba(226, 232, 240, 0.35);
+}
+
+.tier-company {
+  background: linear-gradient(135deg, rgba(180, 83, 9, 0.2) 0%, rgba(217, 119, 6, 0.05) 100%);
+  color: #fed7aa;
+  border: 1px solid rgba(253, 186, 116, 0.35);
+}
+
+.tier-nco {
+  background: rgba(71, 85, 105, 0.25);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.tier-civil {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.25) 0%, rgba(139, 92, 246, 0.08) 100%);
+  color: #c4b5fd;
+  border: 1px solid rgba(167, 139, 250, 0.4);
+}
+
+.tier-employee {
+  background: linear-gradient(135deg, rgba(217, 119, 6, 0.2) 0%, rgba(245, 158, 11, 0.05) 100%);
+  color: #fde68a;
+  border: 1px solid rgba(252, 211, 77, 0.35);
+}
+
+/* Status Indicators */
+.status-indicator {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.status-active {
+  background-color: #22c55e;
+  box-shadow: 0 0 8px #22c55e;
+}
+.status-duty {
+  background-color: #3b82f6;
+  box-shadow: 0 0 8px #3b82f6;
+}
+.status-leave {
+  background-color: #f59e0b;
+  box-shadow: 0 0 8px #f59e0b;
+}
+.status-retired {
+  background-color: #64748b;
+}
+
+/* Card Image Overlay */
+.avatar-frame {
+  position: relative;
+  overflow: hidden;
+  border-radius: 9999px;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+}
+.avatar-frame-army { border-color: rgba(74, 222, 128, 0.6); }
+.avatar-frame-navy { border-color: rgba(96, 165, 250, 0.6); }
+.avatar-frame-airforce { border-color: rgba(56, 189, 248, 0.6); }
+.avatar-frame-civil { border-color: rgba(167, 139, 250, 0.6); }
+.avatar-frame-employee { border-color: rgba(251, 191, 36, 0.6); }
+
+/* Modal Styling */
+.modal-backdrop {
+  background: rgba(4, 8, 16, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.modal-container {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+/* Military ID Card Styling (In View Modal) */
+.military-id-card {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  border: 2px solid #334155;
+  position: relative;
+  overflow: hidden;
+}
+.military-id-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: linear-gradient(90deg, #15803d, #1d4ed8, #0284c7, #d97706);
+}
+
+/* Watermark */
+.watermark-emblem {
+  position: absolute;
+  right: -20px;
+  bottom: -20px;
+  font-size: 160px;
+  opacity: 0.04;
+  pointer-events: none;
+  transform: rotate(-15deg);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+.pulse-glow {
+  animation: pulseGlow 2.5s infinite;
+}
+
+/* Division Filter Pills */
+.division-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+
+.pill-inactive {
+  background: rgba(30, 41, 59, 0.6);
+  color: #94a3b8;
+  border-color: rgba(71, 85, 105, 0.4);
+}
+
+.pill-inactive:hover {
+  background: rgba(51, 65, 85, 0.7);
+  color: #e2e8f0;
+  border-color: rgba(148, 163, 184, 0.4);
+  transform: translateY(-1px);
+}
+
+.pill-active {
+  background: rgba(217, 119, 6, 0.15);
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.5);
+  box-shadow: 0 0 10px rgba(251, 191, 36, 0.15);
+}
+
+/* Print Stylesheet */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .no-print, header, #filter-section, #stats-section, .action-buttons {
+    display: none !important;
+  }
+  .military-id-card, .printable-dossier {
+    border: 2px solid #000 !important;
+    background: #fff !important;
+    color: #000 !important;
+    box-shadow: none !important;
+  }
+}
