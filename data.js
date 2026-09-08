@@ -292,37 +292,55 @@ const BRANCH_INFO = {
 };
 
 /**
+ * ดึง Google Drive File ID ออกจาก URL รูปแบบต่างๆ (คืนค่า null ถ้าไม่ใช่ลิงก์ Drive)
+ */
+function extractDriveFileId(url) {
+  if (!url) return null;
+  const trimmed = String(url).trim();
+  if (!/drive\.google\.com/.test(trimmed)) return null;
+
+  let match = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (match) return match[1];
+
+  match = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (match) return match[1];
+
+  return null;
+}
+
+/**
  * แปลงลิงก์ Google Drive แบบแชร์ทั่วไป (.../file/d/ID/view หรือ ?id=ID หรือ uc?export=view&id=ID)
- * ให้เป็นลิงก์รูปภาพโดยตรงที่ใช้กับ <img src="..."> ได้จริง
+ * ให้เป็นลิงก์รูปภาพ "แสดงตัวอย่าง" ที่ใช้กับ <img src="..."> ได้จริงและโหลดเร็ว
+ * (Google จะย่อขนาดให้อัตโนมัติตามพารามิเตอร์ sz โดยไม่กระทบไฟล์ต้นฉบับที่เก็บไว้)
  * ถ้าไม่ใช่ลิงก์ Google Drive จะคืนค่า URL เดิม (ใช้ได้กับ URL รูปภาพทั่วไปด้วย)
- * ใช้ทั้งตอนกรอกฟอร์ม (input) และตอนแสดงผล (render) เพื่อรองรับข้อมูลเก่าที่บันทึกเป็นลิงก์รูปแบบเดิมไว้แล้ว
  */
 function convertToDirectImageUrl(url) {
   if (!url) return url;
   const trimmed = String(url).trim();
   if (!trimmed) return trimmed;
 
-  // ไม่ใช่ลิงก์ Google Drive ก็คืนค่าเดิม (เช่น URL รูปทั่วไป หรือ data:base64)
-  if (!/drive\.google\.com/.test(trimmed)) return trimmed;
-
-  let fileId = null;
-
-  // รูปแบบ: https://drive.google.com/file/d/FILE_ID/view?usp=sharing
-  let match = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-  if (match) fileId = match[1];
-
-  // รูปแบบ: https://drive.google.com/open?id=FILE_ID หรือ uc?export=view&id=FILE_ID หรือ thumbnail?id=FILE_ID
-  if (!fileId) {
-    match = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-    if (match) fileId = match[1];
-  }
-
+  const fileId = extractDriveFileId(trimmed);
   if (fileId) {
     // ใช้ endpoint thumbnail ซึ่งเสถียรกว่า uc?export=view เวลาฝังเป็น <img> (uc มักถูกบล็อกการ hotlink)
+    // sz=w1000 คือขนาดที่ขอให้ Google ย่อมาให้ตอนแสดงผล ไม่ได้แก้ไขไฟล์ต้นฉบับใน Drive แต่อย่างใด
     return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
   }
 
   return trimmed;
+}
+
+/**
+ * คืนค่าลิงก์ "ดาวน์โหลดไฟล์ต้นฉบับ" ความละเอียดเต็ม (ไม่ผ่านการย่อขนาดของ thumbnail)
+ * ใช้สำหรับปุ่มดาวน์โหลดรูป ต่างจาก resolveAvatarUrl ที่ใช้แสดงผลในหน้าเว็บ (ย่อขนาดเพื่อโหลดเร็ว)
+ */
+function resolveAvatarDownloadUrl(p) {
+  if (!p || !p.avatar) return resolveAvatarUrl(p);
+  const raw = String(p.avatar).trim();
+  const fileId = extractDriveFileId(raw);
+  if (fileId) {
+    return `https://drive.google.com/uc?export=download&id=${fileId}`;
+  }
+  return raw; // ลิงก์ทั่วไปหรือ data: URL ก็เป็นไฟล์ต้นฉบับอยู่แล้ว
 }
 
 /**
