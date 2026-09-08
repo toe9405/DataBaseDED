@@ -1032,6 +1032,35 @@ function handleImageUpload(event) {
   reader.readAsDataURL(file);
 }
 
+/**
+ * แปลงลิงก์ Google Drive แบบแชร์ทั่วไป (.../file/d/ID/view หรือ ?id=ID)
+ * ให้เป็นลิงก์รูปภาพโดยตรงที่ใช้กับ <img src="..."> ได้จริง
+ * ถ้าไม่ใช่ลิงก์ Google Drive จะคืนค่า URL เดิม
+ */
+function convertToDirectImageUrl(url) {
+  if (!url) return url;
+  const trimmed = url.trim();
+
+  let fileId = null;
+
+  // รูปแบบ: https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+  let match = trimmed.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (match) fileId = match[1];
+
+  // รูปแบบ: https://drive.google.com/open?id=FILE_ID หรือ uc?export=view&id=FILE_ID
+  if (!fileId) {
+    match = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (match) fileId = match[1];
+  }
+
+  if (fileId) {
+    // ใช้ endpoint thumbnail ซึ่งเสถียรกว่าเวลาฝังเป็นรูปภาพ (uc?export=view มักถูกบล็อกการ hotlink)
+    return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
+  }
+
+  return trimmed;
+}
+
 function handleImageUrlInput(url) {
   if (url && url.trim().length > 5) {
     document.getElementById('form-avatar-preview').src = url.trim();
