@@ -707,30 +707,29 @@ function handleFormRankChange(rankName) {
   }
 }
 
+/**
+ * จัดการอัปโหลดไฟล์รูปภาพ — เก็บไฟล์ต้นฉบับไว้ตามความละเอียดเดิม (ไม่ย่อ/ไม่บีบคุณภาพ)
+ * เพื่อให้กำลังพลดาวน์โหลดไฟล์คุณภาพเต็มได้ภายหลัง ส่วนการแสดงผลในหน้าเว็บจะใช้ thumbnail
+ * ที่ Google สร้างให้อัตโนมัติตอนแสดงผล (ไม่กระทบไฟล์ต้นฉบับที่เก็บไว้)
+ */
 function handleImageUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
 
+  const maxSizeMB = 15;
+  if (file.size > maxSizeMB * 1024 * 1024) {
+    showToast(`ไฟล์รูปภาพใหญ่เกินไป (สูงสุด ${maxSizeMB}MB) กรุณาเลือกไฟล์ที่เล็กกว่านี้`, 'error');
+    event.target.value = '';
+    return;
+  }
+
   const reader = new FileReader();
   reader.onload = (e) => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const maxDim = 400;
-      let width = img.width, height = img.height;
-
-      if (width > height) { if (width > maxDim) { height *= maxDim / width; width = maxDim; } }
-      else { if (height > maxDim) { width *= maxDim / height; height = maxDim; } }
-
-      canvas.width = width;
-      canvas.height = height;
-      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-
-      const base64Data = canvas.toDataURL('image/jpeg', 0.85);
-      document.getElementById('form-avatar-preview').src = base64Data;
-      showToast('อัปโหลดและประมวลผลรูปภาพเรียบร้อย', 'success');
-    };
-    img.src = e.target.result;
+    document.getElementById('form-avatar-preview').src = e.target.result;
+    showToast('อัปโหลดรูปภาพเรียบร้อย (เก็บไฟล์ต้นฉบับ ไม่บีบอัด)', 'success');
+  };
+  reader.onerror = () => {
+    showToast('อ่านไฟล์รูปภาพไม่สำเร็จ', 'error');
   };
   reader.readAsDataURL(file);
 }
@@ -741,6 +740,66 @@ function handleImageUrlInput(url) {
     document.getElementById('form-avatar-preview').src = directUrl;
     document.getElementById('form-avatar-url').value = directUrl;
   }
+}
+
+/**
+ * ดาวน์โหลดรูปภาพจาก URL ใดๆ มาเก็บเป็นไฟล์ที่เครื่องผู้ใช้
+ * ถ้าโหลดแบบ blob ไม่สำเร็จ (เช่นติด CORS) จะเปิดรูปในแท็บใหม่แทน
+ */
+async function downloadImageFromUrl(url, filename) {
+  if (!url) {
+    showToast('ไม่พบรูปภาพสำหรับดาวน์โหลด', 'error');
+    return;
+  }
+  try {
+    if (url.startsWith('data:')) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'avatar.jpg';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      return;
+    }
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('fetch failed');
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename || 'avatar.jpg';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(blobUrl);
+  } catch (err) {
+    window.open(url, '_blank');
+    showToast('ไม่สามารถดาวน์โหลดอัตโนมัติได้ เปิดรูปในแท็บใหม่แทน คลิกขวาแล้วเลือก "บันทึกรูปภาพเป็น..."', 'info');
+  }
+}
+
+/**
+ * ดาวน์โหลดรูปที่แสดงอยู่ในบัตรประจำตัว (Dossier) ที่กำลังเปิดดูอยู่ — ดาวน์โหลดไฟล์ต้นฉบับความละเอียดเต็ม
+ */
+function downloadCurrentViewAvatar() {
+  const p = personnelList.find(item => item.id === currentViewingId);
+  if (!p) {
+    showToast('ไม่พบข้อมูลกำลังพลที่กำลังดูอยู่', 'error');
+    return;
+  }
+  const url = resolveAvatarDownloadUrl(p);
+  downloadImageFromUrl(url, `avatar-${p.firstName}_${p.lastName}.jpg`);
+}
+
+/**
+ * ดาวน์โหลดรูปที่แสดงอยู่ในช่อง preview ของฟอร์มเพิ่มข้อมูล (ไฟล์ที่เพิ่งเลือก/วางลิงก์ไว้)
+ */
+function downloadCurrentFormAvatar() {
+  const preview = document.getElementById('form-avatar-preview');
+  const rawUrl = document.getElementById('form-avatar-url') ? document.getElementById('form-avatar-url').value : '';
+  const url = rawUrl ? resolveAvatarDownloadUrl({ avatar: rawUrl }) : (preview ? preview.src : '');
+  const nameInput = (document.getElementById('form-first-name') || {}).value || 'avatar';
+  downloadImageFromUrl(url, `avatar-${nameInput}.jpg`);
 }
 
 /**
@@ -859,7 +918,7 @@ function viewPersonnel(id) {
             <div class="w-28 h-36 rounded-xl overflow-hidden border-2 border-amber-500/80 shadow-lg bg-slate-950">
               <img src="${resolveAvatarUrl(p)}" alt="${p.firstName}" class="w-full h-full object-cover" onerror="this.src='${getDefaultAvatarForBranch(p.branch)}'">
             </div>
-            <button onclick="downloadMyAvatar('${resolveAvatarUrl(p)}', '${escapeHtml(p.firstName)}_${escapeHtml(p.lastName)}')" class="no-print w-full text-[11px] py-1.5 px-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-amber-300 hover:text-amber-200 border border-slate-700 transition flex items-center justify-center gap-1.5">
+            <button onclick="downloadMyAvatar('${resolveAvatarDownloadUrl(p)}', '${escapeHtml(p.firstName)}_${escapeHtml(p.lastName)}')" class="no-print w-full text-[11px] py-1.5 px-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-amber-300 hover:text-amber-200 border border-slate-700 transition flex items-center justify-center gap-1.5">
               <i class="fa-solid fa-download"></i> ดาวน์โหลดรูป
             </button>
           </div>
