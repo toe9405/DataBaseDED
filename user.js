@@ -57,8 +57,22 @@ async function uploadPhotoToCloud(base64Data, fileName, mimeType) {
  * ดาวน์โหลดรูปประจำตัวเป็นไฟล์จริง (สำหรับปุ่มในหน้าดูประวัติกำลังพล)
  */
 async function downloadMyAvatar(url, personName) {
+  if (!url) {
+    showToast('ไม่พบรูปภาพสำหรับดาวน์โหลด', 'error');
+    return;
+  }
   try {
+    if (url.startsWith('data:')) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `avatar-${personName || 'photo'}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      return;
+    }
     const res = await fetch(url);
+    if (!res.ok) throw new Error('fetch failed');
     const blob = await res.blob();
     const objectUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -69,7 +83,9 @@ async function downloadMyAvatar(url, personName) {
     a.remove();
     URL.revokeObjectURL(objectUrl);
   } catch (err) {
-    showToast('ดาวน์โหลดรูปภาพไม่สำเร็จ', 'error');
+    // ติด CORS หรือโหลดไม่ได้ — เปิดรูปในแท็บใหม่ให้ผู้ใช้กดบันทึกเอง
+    window.open(url, '_blank');
+    showToast('ไม่สามารถดาวน์โหลดอัตโนมัติได้ เปิดรูปในแท็บใหม่แทน คลิกขวาแล้วเลือก "บันทึกรูปภาพเป็น..."', 'info');
   }
 }
 
@@ -480,7 +496,7 @@ function renderGrid(list) {
 
         <div class="flex items-start gap-3.5">
           <div class="avatar-frame avatar-frame-${p.branch} flex-shrink-0 w-16 h-16 relative shadow-md">
-            <img src="${p.avatar || DEFAULT_AVATARS.army_1}" alt="${p.rank} ${p.firstName}" class="w-full h-full object-cover" onerror="this.src='${DEFAULT_AVATARS.army_1}'">
+            <img src="${resolveAvatarUrl(p)}" alt="${p.rank} ${p.firstName}" class="w-full h-full object-cover" onerror="this.src='${getDefaultAvatarForBranch(p.branch)}'">
             <span class="absolute bottom-0 right-0 status-indicator ${statusInfo.className} ring-2 ring-slate-900" title="${statusInfo.label}"></span>
           </div>
 
@@ -540,7 +556,7 @@ function renderTable(list) {
         <td class="py-3 px-4">
           <div class="flex items-center gap-3">
             <div class="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 border border-slate-700">
-              <img src="${p.avatar || DEFAULT_AVATARS.army_1}" alt="${p.firstName}" class="w-full h-full object-cover" onerror="this.src='${DEFAULT_AVATARS.army_1}'">
+              <img src="${resolveAvatarUrl(p)}" alt="${p.firstName}" class="w-full h-full object-cover" onerror="this.src='${getDefaultAvatarForBranch(p.branch)}'">
             </div>
             <div>
               <div class="font-bold text-white">${escapeHtml(p.firstName)} ${escapeHtml(p.lastName)}</div>
@@ -721,7 +737,9 @@ function handleImageUpload(event) {
 
 function handleImageUrlInput(url) {
   if (url && url.trim().length > 5) {
-    document.getElementById('form-avatar-preview').src = url.trim();
+    const directUrl = convertToDirectImageUrl(url);
+    document.getElementById('form-avatar-preview').src = directUrl;
+    document.getElementById('form-avatar-url').value = directUrl;
   }
 }
 
@@ -839,9 +857,9 @@ function viewPersonnel(id) {
         <div class="flex flex-col sm:flex-row items-center sm:items-start gap-5 my-5">
           <div class="flex flex-col items-center gap-2 flex-shrink-0">
             <div class="w-28 h-36 rounded-xl overflow-hidden border-2 border-amber-500/80 shadow-lg bg-slate-950">
-              <img src="${p.avatar || DEFAULT_AVATARS.army_1}" alt="${p.firstName}" class="w-full h-full object-cover" onerror="this.src='${DEFAULT_AVATARS.army_1}'">
+              <img src="${resolveAvatarUrl(p)}" alt="${p.firstName}" class="w-full h-full object-cover" onerror="this.src='${getDefaultAvatarForBranch(p.branch)}'">
             </div>
-            <button onclick="downloadMyAvatar('${p.avatar || DEFAULT_AVATARS.army_1}', '${escapeHtml(p.firstName)}_${escapeHtml(p.lastName)}')" class="no-print w-full text-[11px] py-1.5 px-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-amber-300 hover:text-amber-200 border border-slate-700 transition flex items-center justify-center gap-1.5">
+            <button onclick="downloadMyAvatar('${resolveAvatarUrl(p)}', '${escapeHtml(p.firstName)}_${escapeHtml(p.lastName)}')" class="no-print w-full text-[11px] py-1.5 px-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-amber-300 hover:text-amber-200 border border-slate-700 transition flex items-center justify-center gap-1.5">
               <i class="fa-solid fa-download"></i> ดาวน์โหลดรูป
             </button>
           </div>
