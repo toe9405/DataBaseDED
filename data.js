@@ -291,6 +291,59 @@ const BRANCH_INFO = {
   }
 };
 
+/**
+ * แปลงลิงก์ Google Drive แบบแชร์ทั่วไป (.../file/d/ID/view หรือ ?id=ID หรือ uc?export=view&id=ID)
+ * ให้เป็นลิงก์รูปภาพโดยตรงที่ใช้กับ <img src="..."> ได้จริง
+ * ถ้าไม่ใช่ลิงก์ Google Drive จะคืนค่า URL เดิม (ใช้ได้กับ URL รูปภาพทั่วไปด้วย)
+ * ใช้ทั้งตอนกรอกฟอร์ม (input) และตอนแสดงผล (render) เพื่อรองรับข้อมูลเก่าที่บันทึกเป็นลิงก์รูปแบบเดิมไว้แล้ว
+ */
+function convertToDirectImageUrl(url) {
+  if (!url) return url;
+  const trimmed = String(url).trim();
+  if (!trimmed) return trimmed;
+
+  // ไม่ใช่ลิงก์ Google Drive ก็คืนค่าเดิม (เช่น URL รูปทั่วไป หรือ data:base64)
+  if (!/drive\.google\.com/.test(trimmed)) return trimmed;
+
+  let fileId = null;
+
+  // รูปแบบ: https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+  let match = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (match) fileId = match[1];
+
+  // รูปแบบ: https://drive.google.com/open?id=FILE_ID หรือ uc?export=view&id=FILE_ID หรือ thumbnail?id=FILE_ID
+  if (!fileId) {
+    match = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (match) fileId = match[1];
+  }
+
+  if (fileId) {
+    // ใช้ endpoint thumbnail ซึ่งเสถียรกว่า uc?export=view เวลาฝังเป็น <img> (uc มักถูกบล็อกการ hotlink)
+    return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
+  }
+
+  return trimmed;
+}
+
+/**
+ * คืนค่า URL รูปประจำตัวที่ใช้แสดงผลได้จริงสำหรับกำลังพล 1 คน
+ * แปลงลิงก์ Google Drive อัตโนมัติ และ fallback เป็นรูป default ตามเหล่าทัพถ้าไม่มีรูป
+ */
+function resolveAvatarUrl(p) {
+  const fallback = getDefaultAvatarForBranch(p && p.branch);
+  if (!p || !p.avatar) return fallback;
+  const url = convertToDirectImageUrl(p.avatar);
+  return url || fallback;
+}
+
+function getDefaultAvatarForBranch(branch) {
+  if (branch === 'navy') return DEFAULT_AVATARS.navy_1;
+  if (branch === 'airforce') return DEFAULT_AVATARS.air_1;
+  if (branch === 'civil') return DEFAULT_AVATARS.civil_1;
+  if (branch === 'employee') return DEFAULT_AVATARS.emp_1;
+  return DEFAULT_AVATARS.army_1;
+}
+
 // รูปภาพจำลองสำหรับกำลังพลแต่ละนาย
 const DEFAULT_AVATARS = {
   army_1: 'https://ded.mod.go.th/getattachment/introduce/mark/%E0%B9%82%E0%B8%A5%E0%B9%82%E0%B8%81-%E0%B8%81%E0%B8%A3%E0%B8%A1003-Converted-(1).png.aspx',
