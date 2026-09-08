@@ -672,7 +672,7 @@ function renderGrid(list) {
         <div class="flex items-start gap-3.5">
           <!-- Avatar Frame with Branch Ring -->
           <div class="avatar-frame avatar-frame-${p.branch} flex-shrink-0 w-16 h-16 relative shadow-md">
-            <img src="${p.avatar || DEFAULT_AVATARS.army_1}" alt="${p.rank} ${p.firstName}" class="w-full h-full object-cover" onerror="this.src='${DEFAULT_AVATARS.army_1}'">
+            <img src="${resolveAvatarUrl(p)}" alt="${p.rank} ${p.firstName}" class="w-full h-full object-cover" onerror="this.src='${getDefaultAvatarForBranch(p.branch)}'">
             <span class="absolute bottom-0 right-0 status-indicator ${statusInfo.className} ring-2 ring-slate-900" title="${statusInfo.label}"></span>
           </div>
 
@@ -744,7 +744,7 @@ function renderTable(list) {
         <td class="py-3 px-4">
           <div class="flex items-center gap-3">
             <div class="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 border border-slate-700">
-              <img src="${p.avatar || DEFAULT_AVATARS.army_1}" alt="${p.firstName}" class="w-full h-full object-cover" onerror="this.src='${DEFAULT_AVATARS.army_1}'">
+              <img src="${resolveAvatarUrl(p)}" alt="${p.firstName}" class="w-full h-full object-cover" onerror="this.src='${getDefaultAvatarForBranch(p.branch)}'">
             </div>
             <div>
               <div class="font-bold text-white">${escapeHtml(p.firstName)} ${escapeHtml(p.lastName)}</div>
@@ -890,8 +890,8 @@ function editPersonnel(id) {
   }
 
   // รูปภาพ
-  document.getElementById('form-avatar-preview').src = p.avatar || DEFAULT_AVATARS.army_1;
-  document.getElementById('form-avatar-url').value = p.avatar && p.avatar.startsWith('http') ? p.avatar : '';
+  document.getElementById('form-avatar-preview').src = resolveAvatarUrl(p);
+  document.getElementById('form-avatar-url').value = p.avatar && p.avatar.startsWith('http') ? convertToDirectImageUrl(p.avatar) : '';
 
   const modal = document.getElementById('form-modal');
   modal.classList.remove('hidden');
@@ -1033,37 +1033,70 @@ function handleImageUpload(event) {
 }
 
 /**
- * แปลงลิงก์ Google Drive แบบแชร์ทั่วไป (.../file/d/ID/view หรือ ?id=ID)
- * ให้เป็นลิงก์รูปภาพโดยตรงที่ใช้กับ <img src="..."> ได้จริง
- * ถ้าไม่ใช่ลิงก์ Google Drive จะคืนค่า URL เดิม
+ * ดาวน์โหลดรูปภาพจาก URL ใดๆ มาเก็บเป็นไฟล์ที่เครื่องผู้ใช้
+ * ถ้าโหลดแบบ blob ไม่สำเร็จ (เช่นติด CORS) จะเปิดรูปในแท็บใหม่แทน
  */
-function convertToDirectImageUrl(url) {
-  if (!url) return url;
-  const trimmed = url.trim();
-
-  let fileId = null;
-
-  // รูปแบบ: https://drive.google.com/file/d/FILE_ID/view?usp=sharing
-  let match = trimmed.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
-  if (match) fileId = match[1];
-
-  // รูปแบบ: https://drive.google.com/open?id=FILE_ID หรือ uc?export=view&id=FILE_ID
-  if (!fileId) {
-    match = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-    if (match) fileId = match[1];
+async function downloadImageFromUrl(url, filename) {
+  if (!url) {
+    showToast('ไม่พบรูปภาพสำหรับดาวน์โหลด', 'error');
+    return;
   }
-
-  if (fileId) {
-    // ใช้ endpoint thumbnail ซึ่งเสถียรกว่าเวลาฝังเป็นรูปภาพ (uc?export=view มักถูกบล็อกการ hotlink)
-    return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
+  try {
+    if (url.startsWith('data:')) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'avatar.jpg';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      return;
+    }
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('fetch failed');
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename || 'avatar.jpg';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(blobUrl);
+  } catch (err) {
+    // ติด CORS หรือโหลดไม่ได้ — เปิดรูปในแท็บใหม่ให้ผู้ใช้กดบันทึกเอง
+    window.open(url, '_blank');
+    showToast('ไม่สามารถดาวน์โหลดอัตโนมัติได้ เปิดรูปในแท็บใหม่แทน คลิกขวาแล้วเลือก "บันทึกรูปภาพเป็น..."', 'info');
   }
+}
 
-  return trimmed;
+/**
+ * ดาวน์โหลดรูปที่แสดงอยู่ในบัตรประจำตัว (Dossier) ที่กำลังเปิดดูอยู่
+ */
+function downloadCurrentViewAvatar() {
+  const p = personnelList.find(item => item.id === currentViewingId);
+  if (!p) {
+    showToast('ไม่พบข้อมูลกำลังพลที่กำลังดูอยู่', 'error');
+    return;
+  }
+  const url = resolveAvatarUrl(p);
+  downloadImageFromUrl(url, `avatar-${p.firstName}_${p.lastName}.jpg`);
+}
+
+/**
+ * ดาวน์โหลดรูปที่แสดงอยู่ในช่อง preview ของฟอร์มเพิ่ม/แก้ไขข้อมูล
+ */
+function downloadCurrentFormAvatar() {
+  const preview = document.getElementById('form-avatar-preview');
+  const url = preview ? preview.src : '';
+  const nameInput = (document.getElementById('form-first-name') || {}).value || 'avatar';
+  downloadImageFromUrl(url, `avatar-${nameInput}.jpg`);
 }
 
 function handleImageUrlInput(url) {
   if (url && url.trim().length > 5) {
-    document.getElementById('form-avatar-preview').src = url.trim();
+    const directUrl = convertToDirectImageUrl(url);
+    document.getElementById('form-avatar-preview').src = directUrl;
+    document.getElementById('form-avatar-url').value = directUrl;
   }
 }
 
@@ -1217,7 +1250,7 @@ function viewPersonnel(id) {
         <div class="flex flex-col sm:flex-row items-center sm:items-start gap-5 my-5">
           <!-- Portrait Photo -->
           <div class="w-28 h-36 rounded-xl overflow-hidden border-2 border-amber-500/80 shadow-lg flex-shrink-0 bg-slate-950">
-            <img src="${p.avatar || DEFAULT_AVATARS.army_1}" alt="${p.firstName}" class="w-full h-full object-cover" onerror="this.src='${DEFAULT_AVATARS.army_1}'">
+            <img src="${resolveAvatarUrl(p)}" alt="${p.firstName}" class="w-full h-full object-cover" onerror="this.src='${getDefaultAvatarForBranch(p.branch)}'">
           </div>
 
           <!-- Personnel Info Sheet -->
@@ -1333,7 +1366,7 @@ function deletePersonnelPrompt(id) {
   if (preview) {
     preview.innerHTML = `
       <div class="flex items-center gap-3">
-        <img src="${p.avatar || DEFAULT_AVATARS.army_1}" class="w-10 h-10 rounded-full object-cover border border-slate-700">
+        <img src="${resolveAvatarUrl(p)}" class="w-10 h-10 rounded-full object-cover border border-slate-700">
         <div>
           <div class="font-bold text-white">${p.rank} ${p.firstName} ${p.lastName}</div>
           <div class="text-slate-400">${p.position} • ${p.department}</div>
