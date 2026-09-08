@@ -990,44 +990,28 @@ function handleFormRankChange(rankName) {
 }
 
 /**
- * จัดการอัปโหลดไฟล์รูปภาพ (แปลงเป็น Base64 พร้อมย่อขนาด)
+ * จัดการอัปโหลดไฟล์รูปภาพ — เก็บไฟล์ต้นฉบับไว้ตามความละเอียดเดิม (ไม่ย่อ/ไม่บีบคุณภาพ)
+ * เพื่อให้กำลังพลดาวน์โหลดไฟล์คุณภาพเต็มได้ภายหลัง ส่วนการแสดงผลในหน้าเว็บจะใช้ thumbnail
+ * ที่ Google สร้างให้อัตโนมัติตอนแสดงผล (ไม่กระทบไฟล์ต้นฉบับที่เก็บไว้)
  */
 function handleImageUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
 
+  const maxSizeMB = 15;
+  if (file.size > maxSizeMB * 1024 * 1024) {
+    showToast(`ไฟล์รูปภาพใหญ่เกินไป (สูงสุด ${maxSizeMB}MB) กรุณาเลือกไฟล์ที่เล็กกว่านี้`, 'error');
+    event.target.value = '';
+    return;
+  }
+
   const reader = new FileReader();
   reader.onload = (e) => {
-    const img = new Image();
-    img.onload = () => {
-      // สร้าง canvas เพื่อย่อขนาดให้ไม่เกิน 400x400 ประหยัด LocalStorage
-      const canvas = document.createElement('canvas');
-      const maxDim = 400;
-      let width = img.width;
-      let height = img.height;
-
-      if (width > height) {
-        if (width > maxDim) {
-          height *= maxDim / width;
-          width = maxDim;
-        }
-      } else {
-        if (height > maxDim) {
-          width *= maxDim / height;
-          height = maxDim;
-        }
-      }
-
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, width, height);
-
-      const base64Data = canvas.toDataURL('image/jpeg', 0.85);
-      document.getElementById('form-avatar-preview').src = base64Data;
-      showToast('อัปโหลดและประมวลผลรูปภาพเรียบร้อย', 'success');
-    };
-    img.src = e.target.result;
+    document.getElementById('form-avatar-preview').src = e.target.result;
+    showToast('อัปโหลดรูปภาพเรียบร้อย (เก็บไฟล์ต้นฉบับ ไม่บีบอัด)', 'success');
+  };
+  reader.onerror = () => {
+    showToast('อ่านไฟล์รูปภาพไม่สำเร็จ', 'error');
   };
   reader.readAsDataURL(file);
 }
@@ -1070,7 +1054,7 @@ async function downloadImageFromUrl(url, filename) {
 }
 
 /**
- * ดาวน์โหลดรูปที่แสดงอยู่ในบัตรประจำตัว (Dossier) ที่กำลังเปิดดูอยู่
+ * ดาวน์โหลดรูปที่แสดงอยู่ในบัตรประจำตัว (Dossier) ที่กำลังเปิดดูอยู่ — ดาวน์โหลดไฟล์ต้นฉบับความละเอียดเต็ม
  */
 function downloadCurrentViewAvatar() {
   const p = personnelList.find(item => item.id === currentViewingId);
@@ -1078,16 +1062,18 @@ function downloadCurrentViewAvatar() {
     showToast('ไม่พบข้อมูลกำลังพลที่กำลังดูอยู่', 'error');
     return;
   }
-  const url = resolveAvatarUrl(p);
+  const url = resolveAvatarDownloadUrl(p);
   downloadImageFromUrl(url, `avatar-${p.firstName}_${p.lastName}.jpg`);
 }
 
 /**
- * ดาวน์โหลดรูปที่แสดงอยู่ในช่อง preview ของฟอร์มเพิ่ม/แก้ไขข้อมูล
+ * ดาวน์โหลดรูปที่แสดงอยู่ในช่อง preview ของฟอร์มเพิ่ม/แก้ไขข้อมูล (ไฟล์ที่เพิ่งเลือก/บันทึกไว้)
  */
 function downloadCurrentFormAvatar() {
   const preview = document.getElementById('form-avatar-preview');
-  const url = preview ? preview.src : '';
+  const rawUrl = document.getElementById('form-avatar-url') ? document.getElementById('form-avatar-url').value : '';
+  // ถ้ามีลิงก์ Drive ที่บันทึกไว้แล้ว ให้ดาวน์โหลดไฟล์ต้นฉบับผ่านลิงก์นั้น ไม่ใช่ thumbnail ที่ preview ใช้แสดงผล
+  const url = rawUrl ? resolveAvatarDownloadUrl({ avatar: rawUrl }) : (preview ? preview.src : '');
   const nameInput = (document.getElementById('form-first-name') || {}).value || 'avatar';
   downloadImageFromUrl(url, `avatar-${nameInput}.jpg`);
 }
