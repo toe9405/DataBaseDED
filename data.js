@@ -102,9 +102,9 @@ const RANK_HIERARCHY = {
     { rank: 'ขรก.พลเรือนกลาโหม (ทั่วไป - ปฏิบัติงาน)', tier: 15, titleEn: 'Operational Level', category: 'nco' }
   ],
   employee: [
-    { rank: 'ลูกจ้างประจำ', tier: 18, titleEn: 'Permanent Employee', category: 'employee' },
-    { rank: 'พนักงานราชการ', tier: 18, titleEn: 'Government Employee', category: 'employee' },
-    { rank: 'พนักงานกรม', tier: 18, titleEn: 'Department Employee', category: 'employee' }
+    { rank: 'ลูกจ้างประจำ', tier: 19, titleEn: 'Permanent Employee', category: 'employee' },
+    { rank: 'พนักงานราชการ', tier: 19, titleEn: 'Government Employee', category: 'employee' },
+    { rank: 'พนักงานกรม', tier: 19, titleEn: 'Department Employee', category: 'employee' }
   ]
 };
 
