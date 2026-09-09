@@ -304,20 +304,18 @@ function setViewMode(mode) {
   viewMode = mode;
   const gridBtn = document.getElementById('view-mode-grid');
   const tableBtn = document.getElementById('view-mode-table');
-  const gridContainer = document.getElementById('personnel-grid');
-  const tableContainer = document.getElementById('personnel-table-wrapper');
 
   if (mode === 'grid') {
     gridBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-slate-800 shadow flex items-center gap-1.5 transition';
     tableBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white flex items-center gap-1.5 transition';
-    gridContainer.classList.remove('hidden');
-    tableContainer.classList.add('hidden');
   } else {
     gridBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white flex items-center gap-1.5 transition';
     tableBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-slate-800 shadow flex items-center gap-1.5 transition';
-    gridContainer.classList.add('hidden');
-    tableContainer.classList.remove('hidden');
   }
+
+  // สำคัญ: ต้องเรียก renderApp() เพื่อให้ renderTable()/renderGrid() ทำงานจริง
+  // ไม่งั้นแค่สลับการแสดง/ซ่อน div แต่เนื้อหาข้างในตาราง (tbody) จะยังว่างเปล่าอยู่
+  renderApp();
 }
 
 function clearAllFilters() {
