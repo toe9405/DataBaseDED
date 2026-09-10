@@ -396,6 +396,105 @@ function handleFormSectionChange() {
   } else {
     deptHidden.value = div;
   }
+
+  updatePositionSuggestions(div, sec);
+}
+
+/**
+ * อัปเดตตัวเลือกในช่อง "ตำแหน่ง" (dropdown) ตาม กอง/แผนก ที่เลือก
+ * แสดงเฉพาะชื่อตำแหน่ง ไม่มียศกำกับต่อท้าย และมีตัวเลือก "อื่นๆ" สำหรับกรอกเอง
+ */
+function updatePositionSuggestions(div, sec) {
+  const select = document.getElementById('form-position');
+  if (!select) return;
+
+  // เก็บค่าตำแหน่งที่ผู้ใช้เลือก/กรอกไว้ก่อนสร้างตัวเลือกใหม่ ป้องกันไม่ให้ค่าหายไปโดยไม่ตั้งใจ
+  // (เช่น ตอนกดบันทึกฟอร์ม ซึ่งจะเรียกฟังก์ชันนี้ซ้ำผ่าน handleFormSectionChange)
+  const previousValue = getFormPositionValue();
+
+  const suggestions = getPositionSuggestions(div, sec);
+
+  let html = '<option value="">-- เลือกตำแหน่ง --</option>';
+  suggestions.forEach(title => {
+    html += `<option value="${escapeHtml(title)}">${escapeHtml(title)}</option>`;
+  });
+  html += `<option value="__other__">อื่นๆ (ระบุเอง)</option>`;
+  select.innerHTML = html;
+
+  handleFormPositionChange();
+
+  // คืนค่าตำแหน่งเดิมกลับเข้าไปในดรอปดาวน์ที่สร้างใหม่ (ถ้าตรงกับรายการใหม่ก็เลือกได้เลย
+  // ถ้าไม่ตรงจะตกไปที่ "อื่นๆ" พร้อมเติมข้อความเดิมไว้ให้ ไม่ทำให้ค่าที่กรอกไว้หายไป)
+  if (previousValue) {
+    setFormPositionValue(previousValue);
+  }
+}
+
+/**
+ * สลับการแสดงช่องกรอกตำแหน่งเอง เมื่อผู้ใช้เลือก "อื่นๆ" ในดรอปดาวน์ตำแหน่ง
+ */
+function handleFormPositionChange() {
+  const select = document.getElementById('form-position');
+  const customWrap = document.getElementById('form-position-custom-wrap');
+  if (!select || !customWrap) return;
+
+  if (select.value === '__other__') {
+    customWrap.classList.remove('hidden');
+  } else {
+    customWrap.classList.add('hidden');
+    const customInput = document.getElementById('form-position-custom');
+    if (customInput) customInput.value = '';
+  }
+}
+
+/**
+ * อ่านค่าตำแหน่งที่เลือกจริงจากฟอร์ม (รองรับกรณีเลือก "อื่นๆ" แล้วพิมพ์เอง)
+ */
+function getFormPositionValue() {
+  const select = document.getElementById('form-position');
+  if (!select) return '';
+  if (select.value === '__other__') {
+    const customInput = document.getElementById('form-position-custom');
+    return customInput ? customInput.value.trim() : '';
+  }
+  return select.value.trim();
+}
+
+/**
+ * ตั้งค่าตำแหน่งปัจจุบันของกำลังพลลงในดรอปดาวน์ตำแหน่ง (ใช้ตอนเปิดฟอร์มแก้ไข)
+ * ถ้าตำแหน่งเดิมไม่ตรงกับรายการมาตรฐาน จะเลือก "อื่นๆ" และเติมค่าเดิมไว้ในช่องกรอกเอง
+ * โดยไม่มีการแก้ไขค่าตำแหน่งเดิมของกำลังพลแต่อย่างใด
+ */
+function setFormPositionValue(positionText) {
+  const select = document.getElementById('form-position');
+  const customWrap = document.getElementById('form-position-custom-wrap');
+  const customInput = document.getElementById('form-position-custom');
+  if (!select) return;
+
+  const trimmed = (positionText || '').trim();
+  if (!trimmed) {
+    select.value = '';
+    if (customWrap) customWrap.classList.add('hidden');
+    return;
+  }
+
+  const norm = normalizePositionText(trimmed);
+  let matched = false;
+  for (const opt of select.options) {
+    if (opt.value && opt.value !== '__other__' && normalizePositionText(opt.value) === norm) {
+      select.value = opt.value;
+      matched = true;
+      break;
+    }
+  }
+
+  if (matched) {
+    if (customWrap) customWrap.classList.add('hidden');
+  } else {
+    select.value = '__other__';
+    if (customWrap) customWrap.classList.remove('hidden');
+    if (customInput) customInput.value = trimmed;
+  }
 }
 
 /**
@@ -434,14 +533,14 @@ function setViewMode(mode) {
   viewMode = mode;
   const gridBtn = document.getElementById('view-mode-grid');
   const tableBtn = document.getElementById('view-mode-table');
+  const orgBtn = document.getElementById('view-mode-orgchart');
 
-  if (mode === 'grid') {
-    gridBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-slate-800 shadow flex items-center gap-1.5 transition';
-    tableBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white flex items-center gap-1.5 transition';
-  } else {
-    gridBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white flex items-center gap-1.5 transition';
-    tableBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-slate-800 shadow flex items-center gap-1.5 transition';
-  }
+  const activeClass = 'px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-slate-800 shadow flex items-center gap-1.5 transition';
+  const inactiveClass = 'px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white flex items-center gap-1.5 transition';
+
+  if (gridBtn) gridBtn.className = mode === 'grid' ? activeClass : inactiveClass;
+  if (tableBtn) tableBtn.className = mode === 'table' ? activeClass : inactiveClass;
+  if (orgBtn) orgBtn.className = mode === 'orgchart' ? activeClass : inactiveClass;
 
   // สำคัญ: ต้องเรียก renderApp() เพื่อให้ renderTable()/renderGrid() ทำงานจริง
   // ไม่งั้นแค่สลับการแสดง/ซ่อน div แต่เนื้อหาข้างในตาราง (tbody) จะยังว่างเปล่าอยู่
@@ -576,18 +675,32 @@ function getFilteredAndSortedPersonnel() {
  */
 function renderApp() {
   renderKPIs();
-  
-  const filteredList = getFilteredAndSortedPersonnel();
-  
-  // อัปเดต Status Bar ตัวเลขสรุป
-  const filteredCountEl = document.getElementById('filtered-count');
-  const totalCountEl = document.getElementById('total-count');
-  if (filteredCountEl) filteredCountEl.textContent = filteredList.length;
-  if (totalCountEl) totalCountEl.textContent = personnelList.length;
 
   const emptyState = document.getElementById('empty-state');
   const gridContainer = document.getElementById('personnel-grid');
   const tableWrapper = document.getElementById('personnel-table-wrapper');
+  const orgchartView = document.getElementById('orgchart-view');
+  const filteredCountEl = document.getElementById('filtered-count');
+  const totalCountEl = document.getElementById('total-count');
+
+  // โหมดผังอัตรากำลัง: แสดงทุกกอง/แผนกพร้อมสถานะ "มีคนครอง/ว่าง" ไม่ใช้ตัวกรองค้นหาปกติ
+  if (viewMode === 'orgchart') {
+    if (emptyState) emptyState.classList.add('hidden');
+    if (gridContainer) gridContainer.classList.add('hidden');
+    if (tableWrapper) tableWrapper.classList.add('hidden');
+    if (orgchartView) orgchartView.classList.remove('hidden');
+    if (filteredCountEl) filteredCountEl.textContent = personnelList.length;
+    if (totalCountEl) totalCountEl.textContent = personnelList.length;
+    renderOrgChart();
+    return;
+  }
+  if (orgchartView) orgchartView.classList.add('hidden');
+
+  const filteredList = getFilteredAndSortedPersonnel();
+
+  // อัปเดต Status Bar ตัวเลขสรุป
+  if (filteredCountEl) filteredCountEl.textContent = filteredList.length;
+  if (totalCountEl) totalCountEl.textContent = personnelList.length;
 
   if (filteredList.length === 0) {
     if (emptyState) emptyState.classList.remove('hidden');
@@ -607,6 +720,78 @@ function renderApp() {
     if (tableWrapper) tableWrapper.classList.remove('hidden');
     renderTable(filteredList);
   }
+}
+
+/**
+ * เรนเดอร์หน้า "ผังโครงสร้างอัตรากำลัง"
+ * แสดงตำแหน่งมาตรฐานของทุกกอง/แผนก พร้อมระบุว่ามีผู้ครองตำแหน่งแล้วหรือว่าง
+ */
+function renderOrgChart() {
+  const container = document.getElementById('orgchart-content');
+  if (!container) return;
+
+  let html = '';
+
+  ENERGY_DEPT_STRUCTURE.forEach(divDef => {
+    const rows = getDivisionPositionRoster(divDef.division);
+    if (!rows || rows.length === 0) return;
+
+    let filledCount = 0;
+    let lastSection = undefined;
+    const rowsHtml = [];
+
+    rows.forEach(row => {
+      const matched = findPersonnelForPosition(personnelList, divDef.division, row.section, row.title);
+      if (matched.length > 0) filledCount++;
+
+      if (row.section !== lastSection) {
+        if (row.section) {
+          rowsHtml.push(
+            `<div class="pt-3 pb-1 px-1 text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+              <i class="fa-solid fa-folder-tree text-[10px]"></i>${escapeHtml(row.section)}
+            </div>`
+          );
+        }
+        lastSection = row.section;
+      }
+
+      let peopleHtml;
+      if (matched.length > 0) {
+        peopleHtml = matched.map(p =>
+          `<span class="px-2 py-0.5 rounded-full bg-emerald-900/30 text-emerald-300 border border-emerald-700/40 text-xs whitespace-nowrap">
+            ${escapeHtml(p.rank || '')} ${escapeHtml(p.firstName || '')} ${escapeHtml(p.lastName || '')}
+          </span>`
+        ).join(' ');
+      } else {
+        peopleHtml = `<span class="px-2 py-0.5 rounded-full bg-slate-800/60 text-slate-500 border border-slate-700/50 text-xs">ว่าง</span>`;
+      }
+
+      rowsHtml.push(
+        `<div class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg ${matched.length > 0 ? 'bg-slate-900/40' : 'bg-slate-900/15'} border border-slate-800/60">
+          <div class="text-sm text-slate-200">${escapeHtml(row.title)}</div>
+          <div class="flex flex-wrap gap-1.5 justify-end">${peopleHtml}</div>
+        </div>`
+      );
+    });
+
+    html += `
+      <div class="glass-panel rounded-2xl p-5 branch-card" style="border-left: 4px solid ${divDef.color || '#64748b'}">
+        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div class="flex items-center gap-2">
+            <i class="fa-solid ${divDef.icon || 'fa-building'}" style="color:${divDef.color || '#94a3b8'}"></i>
+            <h3 class="text-base font-bold text-white">${escapeHtml(divDef.division)}</h3>
+            <span class="text-xs text-slate-500">${escapeHtml(divDef.shortName || '')}</span>
+          </div>
+          <span class="text-xs font-medium px-2 py-1 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+            มีคนครอง ${filledCount} / ${rows.length} อัตรา
+          </span>
+        </div>
+        <div class="space-y-1.5">${rowsHtml.join('')}</div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html || `<div class="glass-panel p-8 rounded-2xl text-center text-slate-400 text-sm">ไม่มีข้อมูลโครงสร้างตำแหน่ง</div>`;
 }
 
 /**
@@ -856,7 +1041,6 @@ function editPersonnel(id) {
   document.getElementById('form-service-id').value = p.serviceId || '';
   document.getElementById('form-first-name').value = p.firstName || '';
   document.getElementById('form-last-name').value = p.lastName || '';
-  document.getElementById('form-position').value = p.position || '';
   document.getElementById('form-status').value = p.status || 'active';
   document.getElementById('form-joined-year').value = p.joinedYear || '';
   document.getElementById('form-phone').value = p.phone || '';
@@ -886,6 +1070,10 @@ function editPersonnel(id) {
     divSelect.value = matchedDiv;
     handleFormDivisionChange(matchedDiv, matchedSec);
   }
+
+  // ตั้งค่าตำแหน่งเดิมลงในดรอปดาวน์ (หรือ "อื่นๆ" ถ้าไม่ตรงกับรายการมาตรฐาน) - ต้องทำหลังสร้างตัวเลือกตำแหน่งแล้วเท่านั้น
+  // ไม่มีการแก้ไขค่าตำแหน่งเดิมของกำลังพล
+  setFormPositionValue(p.position || '');
 
   // รูปภาพ
   document.getElementById('form-avatar-preview').src = resolveAvatarUrl(p);
@@ -1100,7 +1288,7 @@ async function handleFormSubmit(event) {
   const lastName = document.getElementById('form-last-name').value.trim();
   const serviceId = document.getElementById('form-service-id').value.trim();
   const department = document.getElementById('form-department').value.trim();
-  const position = document.getElementById('form-position').value.trim();
+  const position = getFormPositionValue();
   const status = document.getElementById('form-status').value;
   const joinedYear = parseInt(document.getElementById('form-joined-year').value, 10) || null;
   const phone = document.getElementById('form-phone').value.trim();
@@ -1110,6 +1298,11 @@ async function handleFormSubmit(event) {
 
   if (!firstName || !lastName || !rank || !department) {
     showToast('กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน', 'error');
+    return;
+  }
+
+  if (!position) {
+    showToast('กรุณาเลือกหรือระบุตำแหน่ง', 'error');
     return;
   }
 
