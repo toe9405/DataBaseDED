@@ -112,6 +112,17 @@ const RANK_HIERARCHY = {
 // ประกอบด้วย 6 กอง 2 สำนัก และกองบัญชาการ พร้อมแผนกภายใน และไอคอนประจำกอง
 const ENERGY_DEPT_STRUCTURE = [
   {
+    division: 'กองบัญชาการกรมการพลังงานทหาร',
+    shortName: 'บก.พท.',
+    icon: 'fa-building-shield',
+    color: '#f97316',
+    sections: [
+      'สำนักงานเจ้ากรมการพลังงานทหาร',
+      'สำนักงานรองเจ้ากรมการพลังงานทหาร',
+      'สำนักงานนายทหารฝ่ายเสนาธิการ'
+    ]
+  },
+  {
     division: 'กองนโยบายและแผน',
     shortName: 'กนผ.',
     icon: 'fa-chart-pie',
@@ -194,17 +205,6 @@ const ENERGY_DEPT_STRUCTURE = [
       'สำนักงานการเงิน'
     ]
   },
-  {
-    division: 'กองบัญชาการกรมการพลังงานทหาร',
-    shortName: 'บก.พท.',
-    icon: 'fa-building-shield',
-    color: '#f97316',
-    sections: [
-      'สำนักงานเจ้ากรมการพลังงานทหาร',
-      'สำนักงานรองเจ้ากรมการพลังงานทหาร',
-      'สำนักงานนายทหารฝ่ายเสนาธิการ'
-    ]
-  }
 ];
 
 // รายการหน่วยงานเต็มรูปแบบสำหรับ Auto-complete และ Dropdown
@@ -220,6 +220,252 @@ function getAllEnergyDepartments() {
     }
   });
   return list;
+}
+
+// ================= โครงสร้างอัตรากำลัง / ตำแหน่งมาตรฐานประจำกอง-แผนก =================
+// อ้างอิงจากทำเนียบกำลังพล กรมการพลังงานทหาร (ธันวาคม ๒๕๖๘)
+// รูปแบบ 2 แบบ:
+//  1) flat: ใช้กับหน่วยงานที่ไม่มีแผนกย่อย (บก.พท., สำนักงบประมาณ, สำนักงานการเงิน)
+//  2) divisionAdmin + sectionHeads + commonSectionPositions: ใช้กับกองที่มีแผนกย่อย
+const POSITION_STRUCTURE = {
+  'กองบัญชาการกรมการพลังงานทหาร': {
+    flat: [
+      { title: 'เจ้ากรมการพลังงานทหาร', rank: 'พล.ท.' },
+      { title: 'รองเจ้ากรมการพลังงานทหาร (1)', rank: 'พล.ต.' },
+      { title: 'รองเจ้ากรมการพลังงานทหาร (2)', rank: 'พล.ต.' },
+      { title: 'เสนาธิการ', rank: 'พล.ต.' },
+      { title: 'รองเสนาธิการ', rank: 'พ.อ.พิเศษ' },
+      { title: 'นักวิชาการประจำกรม', rank: 'พ.อ.พิเศษ' },
+      { title: 'นายทหารปฏิบัติการ', rank: 'พ.อ.พิเศษ' },
+      { title: 'นายทหารประจำกรม', rank: 'พ.อ.' },
+      { title: 'นายทหารประจำกรม/ผู้เชี่ยวชาญด้านปิโตรเลียม', rank: 'พ.อ.' },
+      { title: 'นายทหารประจำกรม/ผู้เชี่ยวชาญด้านพลังงานทดแทน', rank: 'พ.อ.' },
+      { title: 'นายทหารตรวจสอบภายใน', rank: 'พ.ต.' },
+      { title: 'นายทหารพระธรรมนูญ', rank: 'พ.อ.' },
+      { title: 'นายทหารพระธรรมนูญผู้ช่วย', rank: 'พ.ท.' },
+      { title: 'นายทหารสารบรรณและธุรการ', rank: 'ร.อ.' },
+      { title: 'นายทหารคนสนิท', rank: 'พ.ต.' },
+      { title: 'เสมียน', rank: '' }
+    ]
+  },
+  'กองนโยบายและแผน': {
+    divisionAdmin: [
+      { title: 'ผู้อำนวยการกอง', rank: 'พ.อ.พิเศษ' },
+      { title: 'รองผู้อำนวยการกอง (1)', rank: 'พ.อ.' },
+      { title: 'รองผู้อำนวยการกอง (2)', rank: 'พ.อ.' },
+      { title: 'นายทหารสารบรรณและธุรการ', rank: 'ร.อ.' }
+    ],
+    sectionHeads: {
+      'แผนกนโยบายและแผน': { title: 'หัวหน้าแผนกนโยบายและแผน', rank: 'พ.ท.' },
+      'แผนกเทคโนโลยีสารสนเทศ': { title: 'หัวหน้าแผนกเทคโนโลยีสารสนเทศ', rank: 'พ.ท.' },
+      'แผนกโครงการและงบประมาณ': { title: 'หัวหน้าแผนกโครงการและงบประมาณ', rank: 'พ.ท.' }
+    },
+    commonSectionPositions: [
+      { title: 'ประจำแผนก', rank: 'พ.ต./ร.อ.' },
+      { title: 'นายทหารรักษาความปลอดภัย', rank: 'ร.อ.' },
+      { title: 'หัวหน้าสถานีวิทยุ', rank: 'ร.อ.' },
+      { title: 'นายสถานีวิทยุ', rank: '' },
+      { title: 'ช่างอิเล็กทรอนิกส์', rank: '' },
+      { title: 'เสมียน', rank: '' }
+    ]
+  },
+  'กองกลาง': {
+    divisionAdmin: [
+      { title: 'ผู้อำนวยการกอง', rank: 'พ.อ.พิเศษ' },
+      { title: 'รองผู้อำนวยการกอง (1)', rank: 'พ.อ.' },
+      { title: 'รองผู้อำนวยการกอง (2)', rank: 'พ.อ.' },
+      { title: 'เจ้าหน้าที่สารบรรณและธุรการ', rank: '' }
+    ],
+    sectionHeads: {
+      'แผนกธุรการ': { title: 'หัวหน้าแผนกธุรการ', rank: 'พ.ท.' },
+      'แผนกกำลังพล': { title: 'หัวหน้าแผนกกำลังพล', rank: 'พ.ท.' },
+      'แผนกบริการ': { title: 'หัวหน้าแผนกบริการ', rank: 'พ.ท.' }
+    },
+    commonSectionPositions: [
+      { title: 'ประจำแผนก', rank: 'พ.ต./ร.อ.' },
+      { title: 'นายทหารยานยนต์', rank: 'ร.อ.' },
+      { title: 'นายสิบยานยนต์', rank: '' },
+      { title: 'ช่างยานยนต์', rank: '' },
+      { title: 'ช่างไฟฟ้า', rank: '' },
+      { title: 'ช่างประปา', rank: '' },
+      { title: 'ช่างโยธา', rank: '' },
+      { title: 'พลขับรถ', rank: '' },
+      { title: 'เสมียน', rank: '' }
+    ]
+  },
+  'กองการปิโตรเลียม': {
+    divisionAdmin: [
+      { title: 'ผู้อำนวยการกอง', rank: 'พ.อ.พิเศษ' },
+      { title: 'รองผู้อำนวยการกอง (1)', rank: 'พ.อ.' },
+      { title: 'รองผู้อำนวยการกอง (2)', rank: 'พ.อ.' },
+      { title: 'เจ้าหน้าที่สารบรรณและธุรการ', rank: '' }
+    ],
+    sectionHeads: {
+      'แผนกปิโตรเลียม': { title: 'หัวหน้าแผนกปิโตรเลียม', rank: 'พ.ท.' },
+      'แผนกวิทยาการและสถิติ': { title: 'หัวหน้าแผนกวิทยาการและสถิติ', rank: 'พ.ท.' },
+      'แผนกบริหารงานผลิตภัณฑ์': { title: 'หัวหน้าแผนกบริหารงานผลิตภัณฑ์', rank: 'พ.ท.' }
+    },
+    commonSectionPositions: [
+      { title: 'ประจำแผนก', rank: 'พ.ต./ร.อ.' },
+      { title: 'นายทหารปิโตรเลียม', rank: 'พ.ต.' },
+      { title: 'นายทหารวิทยาการ', rank: 'ร.อ.' },
+      { title: 'นายทหารสถิติ', rank: 'ร.อ.' },
+      { title: 'เสมียน', rank: '' }
+    ]
+  },
+  'กองพลังงานทดแทน': {
+    divisionAdmin: [
+      { title: 'ผู้อำนวยการกอง', rank: 'พ.อ.พิเศษ' },
+      { title: 'รองผู้อำนวยการกอง (1)', rank: 'พ.อ.' },
+      { title: 'รองผู้อำนวยการกอง (2)', rank: 'พ.อ.' },
+      { title: 'เจ้าหน้าที่สารบรรณ', rank: '' }
+    ],
+    sectionHeads: {
+      'แผนกพลังงานทดแทน': { title: 'หัวหน้าแผนกพลังงานทดแทน', rank: 'พ.ท.' },
+      'แผนกเทคโนโลยีพลังงานทดแทนและอนุรักษ์พลังงาน': { title: 'หัวหน้าแผนกเทคโนโลยีพลังงานทดแทนและอนุรักษ์พลังงาน', rank: 'พ.ท.' },
+      'แผนกติดตามประเมินผล': { title: 'หัวหน้าแผนกติดตามประเมินผล', rank: 'พ.ท.' }
+    },
+    commonSectionPositions: [
+      { title: 'ประจำแผนก', rank: 'พ.ต./ร.อ.' },
+      { title: 'เสมียน', rank: '' }
+    ]
+  },
+  'กองฝึกอบรม': {
+    divisionAdmin: [
+      { title: 'ผู้อำนวยการกอง', rank: 'พ.อ.พิเศษ' },
+      { title: 'รองผู้อำนวยการกอง', rank: 'พ.อ.' }
+    ],
+    sectionHeads: {
+      'แผนกฝึกอบรมที่ ๑': { title: 'หัวหน้าแผนกฝึกอบรมที่ ๑', rank: 'พ.ท.' },
+      'แผนกฝึกอบรมที่ ๒': { title: 'หัวหน้าแผนกฝึกอบรมที่ ๒', rank: 'พ.ท.' }
+    },
+    commonSectionPositions: [
+      { title: 'ประจำแผนก', rank: 'พ.ต./ร.อ.' },
+      { title: 'ช่างซ่อมบำรุง', rank: '' },
+      { title: 'เสมียน', rank: '' }
+    ]
+  },
+  'กองการส่งกำลัง': {
+    divisionAdmin: [
+      { title: 'ผู้อำนวยการกอง', rank: 'พ.อ.พิเศษ' },
+      { title: 'รองผู้อำนวยการกอง (1)', rank: 'พ.อ.' },
+      { title: 'รองผู้อำนวยการกอง (2)', rank: 'พ.อ.' },
+      { title: 'เจ้าหน้าที่สารบรรณ', rank: '' }
+    ],
+    sectionHeads: {
+      'แผนกการส่งกำลัง': { title: 'หัวหน้าแผนกการส่งกำลัง', rank: 'พ.ท.' },
+      'แผนกการจัดหา': { title: 'หัวหน้าแผนกการจัดหา', rank: 'พ.ท.' },
+      'แผนกคลังพัสดุ': { title: 'หัวหน้าแผนกคลังพัสดุ', rank: 'พ.ท.' }
+    },
+    commonSectionPositions: [
+      { title: 'นายทหารส่งกำลัง', rank: 'พ.ต.' },
+      { title: 'นายสิบส่งกำลัง', rank: '' },
+      { title: 'นายทหารจัดหา', rank: 'พ.ต./ร.อ.' },
+      { title: 'นายสิบจัดหา', rank: '' },
+      { title: 'ประจำแผนก', rank: 'พ.ต./ร.อ.' },
+      { title: 'เสมียน', rank: '' }
+    ]
+  },
+  'สำนักงบประมาณ': {
+    flat: [
+      { title: 'หัวหน้าสำนักงานงบประมาณ', rank: 'พ.อ.' },
+      { title: 'รองหัวหน้าสำนักงานงบประมาณ', rank: 'พ.ท.' },
+      { title: 'เจ้าหน้าที่งบประมาณ', rank: 'พ.ต./ร.อ.' },
+      { title: 'เสมียน', rank: '' }
+    ]
+  },
+  'สำนักงานการเงิน': {
+    flat: [
+      { title: 'หัวหน้านายทหารการเงิน', rank: 'พ.อ.' },
+      { title: 'ผู้ช่วยหัวหน้านายทหารการเงิน', rank: 'พ.ท.' },
+      { title: 'นายทหารเงินนอกงบประมาณ', rank: 'พ.ท.' },
+      { title: 'ผู้ช่วยนายทหารเงินนอกงบประมาณ', rank: 'น.ต./ร.อ.' },
+      { title: 'นายทหารบัญชี', rank: 'พ.ต.' },
+      { title: 'ผู้ช่วยนายทหารบัญชี', rank: 'ร.อ.' },
+      { title: 'นายทหารควบคุมการเบิกจ่าย', rank: 'พ.ต.' },
+      { title: 'ผู้ช่วยนายทหารควบคุมการเบิกจ่าย', rank: 'ร.อ.' },
+      { title: 'นายทหารรับจ่ายเงิน', rank: 'ร.อ.' },
+      { title: 'เสมียนเงินนอกงบประมาณ', rank: '' },
+      { title: 'เสมียนการเงิน', rank: '' }
+    ]
+  }
+};
+
+// คืนค่ารายการ "ชื่อตำแหน่ง" มาตรฐาน (ไม่มียศกำกับต่อท้าย) สำหรับใช้เป็นตัวเลือกในช่อง "ตำแหน่ง"
+// ของฟอร์มเพิ่ม/แก้ไขกำลังพล โดยพิจารณาจาก กอง + แผนก ที่เลือก
+function getPositionSuggestions(divisionName, sectionName) {
+  const def = POSITION_STRUCTURE[divisionName];
+  if (!def) return [];
+
+  const items = [];
+  if (def.flat) {
+    items.push(...def.flat);
+  } else {
+    if (sectionName && def.sectionHeads && def.sectionHeads[sectionName]) {
+      items.push(def.sectionHeads[sectionName]);
+      if (def.commonSectionPositions) items.push(...def.commonSectionPositions);
+    } else {
+      // ยังไม่ได้ระบุแผนก -> เสนอตำแหน่งระดับกอง (ผอ.กอง/รอง ผอ.กอง ฯลฯ)
+      if (def.divisionAdmin) items.push(...def.divisionAdmin);
+      // และหัวหน้าแผนกทั้งหมดในกองนี้ เผื่อผู้ใช้ยังไม่กดเลือกแผนก
+      if (def.sectionHeads) items.push(...Object.values(def.sectionHeads));
+    }
+  }
+
+  // เอาเฉพาะชื่อตำแหน่ง ไม่แสดงยศในวงเล็บ และตัดรายการซ้ำออก
+  const seen = new Set();
+  const titles = [];
+  items.forEach(p => {
+    if (!seen.has(p.title)) {
+      seen.add(p.title);
+      titles.push(p.title);
+    }
+  });
+  return titles;
+}
+
+// คืนค่าโครงสร้าง "ผังอัตรากำลัง" แบบเต็มของกองหนึ่ง ๆ เพื่อใช้แสดงหน้าผังโครงสร้าง
+// แต่ละแถว: { section: string|null, title, rank }
+function getDivisionPositionRoster(divisionName) {
+  const def = POSITION_STRUCTURE[divisionName];
+  if (!def) return [];
+
+  const rows = [];
+  if (def.flat) {
+    def.flat.forEach(p => rows.push({ section: null, title: p.title, rank: p.rank }));
+    return rows;
+  }
+
+  (def.divisionAdmin || []).forEach(p => rows.push({ section: null, title: p.title, rank: p.rank }));
+
+  const structureEntry = ENERGY_DEPT_STRUCTURE.find(d => d.division === divisionName);
+  const sectionOrder = structureEntry ? structureEntry.sections : Object.keys(def.sectionHeads || {});
+
+  sectionOrder.forEach(sec => {
+    const head = def.sectionHeads ? def.sectionHeads[sec] : null;
+    if (head) rows.push({ section: sec, title: head.title, rank: head.rank });
+    (def.commonSectionPositions || []).forEach(p => rows.push({ section: sec, title: p.title, rank: p.rank }));
+  });
+
+  return rows;
+}
+
+// จับคู่ตำแหน่งมาตรฐานกับกำลังพลที่มีอยู่จริงในระบบ เพื่อดูว่าตำแหน่งไหน "มีคนครอง" หรือ "ว่าง"
+// เทียบแบบผ่อนปรน (ตัดวงเล็บ/เว้นวรรค แล้วเทียบว่าข้อความใดข้อความหนึ่ง includes อีกฝั่ง)
+// หมายเหตุ: คงวงเล็บตัวเลขไว้ เช่น "(1)" "(2)" เพราะใช้แยกตำแหน่งที่มี 2 อัตรา (เช่น รองผู้อำนวยการกอง) ออกจากกัน
+function normalizePositionText(str) {
+  return (str || '').replace(/\((?!\d+\))[^)]*\)/g, '').replace(/\s+/g, '').trim();
+}
+
+function findPersonnelForPosition(personnelList, divisionName, sectionName, positionTitle) {
+  const expectedDept = sectionName ? `${divisionName} (${sectionName})` : divisionName;
+  const normTarget = normalizePositionText(positionTitle);
+
+  return personnelList.filter(p => {
+    if (p.department !== expectedDept) return false;
+    const normPos = normalizePositionText(p.position);
+    return normPos && (normPos.includes(normTarget) || normTarget.includes(normPos));
+  });
 }
 
 // ข้อมูลสัญลักษณ์และสีประจำเหล่าทัพและสังกัดกรม
