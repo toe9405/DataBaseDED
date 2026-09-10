@@ -254,6 +254,10 @@
               <i class="fa-solid fa-table-list"></i>
               <span>ตาราง</span>
             </button>
+            <button onclick="setViewMode('orgchart')" id="view-mode-orgchart" class="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white flex items-center gap-1.5 transition" title="ผังโครงสร้างกำลังพล">
+              <i class="fa-solid fa-sitemap"></i>
+              <span>ผังกำลังพล</span>
+            </button>
           </div>
         </div>
 
@@ -363,6 +367,11 @@
             </tbody>
           </table>
         </div>
+      </div>
+
+      <!-- Org Chart / Position Roster View (Hidden by default, toggled via JS) -->
+      <div id="orgchart-view" class="hidden space-y-4 animate-fade-in">
+        <div id="orgchart-content" class="space-y-4"></div>
       </div>
 
       <!-- Empty State -->
@@ -531,7 +540,13 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label class="block text-xs font-semibold text-slate-300 mb-1.5">ตำแหน่ง (Position) <span class="text-red-400">*</span></label>
-            <input type="text" id="form-position" required placeholder="เช่น ผู้อำนวยการกอง, หัวหน้าแผนกปิโตรเลียม" class="w-full py-2.5 px-3 bg-slate-950 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-amber-500">
+            <select id="form-position" required class="w-full py-2.5 px-3 bg-slate-950 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-amber-500" onchange="handleFormPositionChange()">
+              <option value="">-- เลือกตำแหน่ง --</option>
+            </select>
+            <div id="form-position-custom-wrap" class="hidden mt-2">
+              <input type="text" id="form-position-custom" placeholder="ระบุชื่อตำแหน่งเอง" class="w-full py-2.5 px-3 bg-slate-950 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-amber-500">
+            </div>
+            <p class="text-[11px] text-slate-500 mt-1"><i class="fa-solid fa-circle-info mr-1"></i>ตัวเลือกตำแหน่งจะเปลี่ยนอัตโนมัติตามกอง/แผนกที่เลือกไว้ด้านบน</p>
           </div>
           <div>
             <label class="block text-xs font-semibold text-slate-300 mb-1.5">สถานะการปฏิบัติหน้าที่</label>
