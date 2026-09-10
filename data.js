@@ -450,13 +450,15 @@ function getDivisionPositionRoster(divisionName) {
   return rows;
 }
 
-// จับคู่ตำแหน่งมาตรฐานกับกำลังพลที่มีอยู่จริงในระบบ เพื่อดูว่าตำแหน่งไหน "มีคนครอง" หรือ "ว่าง"
-// เทียบแบบผ่อนปรน (ตัดวงเล็บ/เว้นวรรค แล้วเทียบว่าข้อความใดข้อความหนึ่ง includes อีกฝั่ง)
+// ฟังก์ชันตัดช่องว่าง/วงเล็บที่ไม่ใช่ตัวเลขออกจากข้อความตำแหน่ง ก่อนนำไปเทียบแบบตรงตัวใน findPersonnelForPosition
 // หมายเหตุ: คงวงเล็บตัวเลขไว้ เช่น "(1)" "(2)" เพราะใช้แยกตำแหน่งที่มี 2 อัตรา (เช่น รองผู้อำนวยการกอง) ออกจากกัน
 function normalizePositionText(str) {
   return (str || '').replace(/\((?!\d+\))[^)]*\)/g, '').replace(/\s+/g, '').trim();
 }
 
+// จับคู่ตำแหน่งมาตรฐานกับกำลังพลที่มีอยู่จริงในระบบ เพื่อดูว่าตำแหน่งไหน "มีคนครอง" หรือ "ว่าง"
+// เทียบแบบตรงตัว (หลังตัดช่องว่าง/วงเล็บที่ไม่ใช่ตัวเลขออกก่อน) เพื่อไม่ให้ตำแหน่ง "รอง..." ไปจับคู่ผิดกับตำแหน่งหลัก
+// (เช่น "รองเจ้ากรมการพลังงานทหาร" ไม่ควรถูกนับเป็นคนเดียวกับ "เจ้ากรมการพลังงานทหาร" เพราะข้อความซ้อนกันอยู่)
 function findPersonnelForPosition(personnelList, divisionName, sectionName, positionTitle) {
   const expectedDept = sectionName ? `${divisionName} (${sectionName})` : divisionName;
   const normTarget = normalizePositionText(positionTitle);
@@ -464,7 +466,7 @@ function findPersonnelForPosition(personnelList, divisionName, sectionName, posi
   return personnelList.filter(p => {
     if (p.department !== expectedDept) return false;
     const normPos = normalizePositionText(p.position);
-    return normPos && (normPos.includes(normTarget) || normTarget.includes(normPos));
+    return normPos && normPos === normTarget;
   });
 }
 
