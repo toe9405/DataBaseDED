@@ -147,6 +147,11 @@
 
         <!-- Action Buttons -->
         <div class="flex items-center space-x-2.5">
+          <!-- ทดลองจัดผังทำเนียบ -->
+          <a href="roster-admin.html" title="ทดลองจัดผังทำเนียบกำลังพล" class="p-2.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 hover:text-indigo-100 border border-indigo-400/30 transition text-sm flex items-center gap-1.5">
+            <i class="fa-solid fa-sitemap"></i>
+            <span class="hidden xl:inline">จัดผังทำเนียบ</span>
+          </a>
           <!-- Reset to Mock Data Button -->
           <button onclick="resetDataWithConfirm()" title="โหลดข้อมูลล่าสุดจากคลาวด์" class="p-2.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition text-sm flex items-center gap-1.5">
             <i class="fa-solid fa-rotate-left"></i>
@@ -666,6 +671,29 @@
               </select>
             </div>
           </div>
+        </div>
+
+        <!-- Secondment: ช่วยปฏิบัติราชการกองอื่น (ถ้ามี) -->
+        <div class="p-3.5 rounded-xl bg-slate-950/70 border border-dashed border-amber-500/30 space-y-2">
+          <div class="text-xs font-semibold text-amber-400 flex items-center gap-1.5">
+            <i class="fa-solid fa-right-left"></i>
+            <span>ช่วยปฏิบัติราชการ (ถ้ามี)</span>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">ไปช่วยราชการที่กอง/สำนัก</label>
+              <select id="form-seconded-to" class="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-amber-500" onchange="handleSecondedToChange(this.value)">
+                <option value="">-- ไม่ได้ช่วยราชการ --</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">แผนก (ที่กองปลายทาง)</label>
+              <select id="form-seconded-section" disabled class="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-amber-500">
+                <option value="">-- ไม่ระบุแผนก --</option>
+              </select>
+            </div>
+          </div>
+          <p class="text-[11px] text-slate-500"><i class="fa-solid fa-circle-info mr-1"></i>ระบุเมื่อบุคคลนี้มีตำแหน่งอยู่กองข้างต้น แต่ไปปฏิบัติงานจริงที่อีกกองหนึ่ง ระบบจะแสดงชื่อไว้ทั้งสองกองพร้อมข้อความกำกับ</p>
         </div>
 
         <!-- Position & Status -->
