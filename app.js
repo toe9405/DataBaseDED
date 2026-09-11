@@ -353,9 +353,57 @@ function initFormDivisions() {
     return `<option value="${escapeHtml(item.division)}">${escapeHtml(item.division)}</option>`;
   }).join('');
 
+  populateSecondedToOptions();
+
   if (ENERGY_DEPT_STRUCTURE.length > 0) {
     handleFormDivisionChange(ENERGY_DEPT_STRUCTURE[0].division);
   }
+}
+
+/**
+ * เติมตัวเลือก "กองที่ไปช่วยราชการ" — รายชื่อกอง/สำนักทั้งหมด บวกตัวเลือก "ไม่ได้ช่วยราชการ"
+ */
+/**
+ * ข้อความแสดงกองปลายทางที่ไปช่วยราชการ พร้อมแผนก (ถ้ามีการระบุ)
+ */
+function formatSecondedTo(p) {
+  if (!p || !p.secondedTo) return '';
+  return p.secondedToSection ? `${p.secondedTo} (${p.secondedToSection})` : p.secondedTo;
+}
+
+function populateSecondedToOptions() {
+  const sel = document.getElementById('form-seconded-to');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">-- ไม่ได้ช่วยราชการ --</option>' +
+    ENERGY_DEPT_STRUCTURE.map(item => `<option value="${escapeHtml(item.division)}">${escapeHtml(item.division)}</option>`).join('');
+  sel.value = current || '';
+}
+
+/**
+ * เติมตัวเลือก "แผนก" ของกองปลายทางที่ไปช่วยราชการ ตามกองที่เลือกไว้ในช่อง form-seconded-to
+ * เรียกใหม่ทุกครั้งที่เปลี่ยนกองปลายทาง (หรือตอนเปิดฟอร์มแก้ไขข้อมูลเดิม)
+ */
+function handleSecondedToChange(divName, selectedSection = '') {
+  const secSel = document.getElementById('form-seconded-section');
+  if (!secSel) return;
+
+  const found = ENERGY_DEPT_STRUCTURE.find(item => item.division === divName);
+
+  if (!divName || !found || found.sections.length === 0 || (found.sections.length === 1 && found.sections[0] === found.division)) {
+    secSel.innerHTML = '<option value="">-- ไม่ระบุแผนก --</option>';
+    secSel.value = '';
+    secSel.disabled = true;
+    return;
+  }
+
+  secSel.disabled = false;
+  let html = '<option value="">-- ไม่ระบุแผนก --</option>';
+  found.sections.forEach(sec => {
+    const isSel = selectedSection === sec ? 'selected' : '';
+    html += `<option value="${escapeHtml(sec)}" ${isSel}>${escapeHtml(sec)}</option>`;
+  });
+  secSel.innerHTML = html;
 }
 
 function handleFormDivisionChange(divName, selectedSection = null) {
@@ -869,6 +917,11 @@ function renderGrid(list) {
               <i class="fa-solid fa-briefcase text-[10px] text-slate-500 flex-shrink-0"></i>
               <span class="truncate">${escapeHtml(p.position) || 'ยังไม่ระบุตำแหน่ง'}</span>
             </p>
+            ${p.secondedTo ? `
+            <p class="text-[10px] text-amber-400 truncate mt-0.5 flex items-center gap-1.5" title="ช่วยราชการ ${escapeHtml(formatSecondedTo(p))}">
+              <i class="fa-solid fa-right-left text-[9px] flex-shrink-0"></i>
+              <span class="truncate">ช่วยราชการ ${escapeHtml(formatSecondedTo(p))}</span>
+            </p>` : ''}
           </div>
         </div>
 
@@ -1019,6 +1072,11 @@ function openAddModal() {
   document.getElementById('form-service-id').value = '';
   document.getElementById('form-joined-year').value = '';
 
+  // ไม่ได้ช่วยราชการโดยค่าเริ่มต้น
+  const secondedSelect = document.getElementById('form-seconded-to');
+  if (secondedSelect) secondedSelect.value = '';
+  handleSecondedToChange('');
+
   const modal = document.getElementById('form-modal');
   modal.classList.remove('hidden');
   modal.classList.add('flex');
@@ -1074,6 +1132,11 @@ function editPersonnel(id) {
   // ตั้งค่าตำแหน่งเดิมลงในดรอปดาวน์ (หรือ "อื่นๆ" ถ้าไม่ตรงกับรายการมาตรฐาน) - ต้องทำหลังสร้างตัวเลือกตำแหน่งแล้วเท่านั้น
   // ไม่มีการแก้ไขค่าตำแหน่งเดิมของกำลังพล
   setFormPositionValue(p.position || '');
+
+  // กองที่ไปช่วยราชการ (ถ้ามี)
+  const secondedSelect = document.getElementById('form-seconded-to');
+  if (secondedSelect) secondedSelect.value = p.secondedTo || '';
+  handleSecondedToChange(p.secondedTo || '', p.secondedToSection || '');
 
   // รูปภาพ
   document.getElementById('form-avatar-preview').src = resolveAvatarUrl(p);
@@ -1290,6 +1353,11 @@ async function handleFormSubmit(event) {
   const department = document.getElementById('form-department').value.trim();
   const position = getFormPositionValue();
   const status = document.getElementById('form-status').value;
+  const secondedToSelect = document.getElementById('form-seconded-to');
+  const secondedTo = secondedToSelect ? secondedToSelect.value.trim() : '';
+  const secondedSectionSelect = document.getElementById('form-seconded-section');
+  const secondedToSection = secondedTo && secondedSectionSelect ? secondedSectionSelect.value.trim() : '';
+  const homeDivision = document.getElementById('form-division').value;
   const joinedYear = parseInt(document.getElementById('form-joined-year').value, 10) || null;
   const phone = document.getElementById('form-phone').value.trim();
   const email = document.getElementById('form-email').value.trim();
@@ -1303,6 +1371,11 @@ async function handleFormSubmit(event) {
 
   if (!position) {
     showToast('กรุณาเลือกหรือระบุตำแหน่ง', 'error');
+    return;
+  }
+
+  if (secondedTo && secondedTo === homeDivision) {
+    showToast('กองที่ไปช่วยราชการต้องไม่ใช่กองต้นสังกัดเดียวกัน', 'error');
     return;
   }
 
@@ -1342,7 +1415,9 @@ async function handleFormSubmit(event) {
         phone,
         email,
         notes,
-        avatar
+        avatar,
+        secondedTo,
+        secondedToSection
       };
       recordToSave = personnelList[idx];
     }
@@ -1363,7 +1438,9 @@ async function handleFormSubmit(event) {
       phone,
       email,
       notes,
-      avatar
+      avatar,
+      secondedTo,
+      secondedToSection
     };
     personnelList.unshift(newPersonnel);
     recordToSave = newPersonnel;
@@ -1455,6 +1532,13 @@ function viewPersonnel(id) {
                 <span class="text-slate-500 block text-[10px]">กอง / สำนัก / แผนก ในกรมการพลังงานทหาร:</span>
                 <span class="font-semibold text-amber-300">${escapeHtml(p.department)}</span>
               </div>
+              ${p.secondedTo ? `
+              <div class="col-span-2">
+                <span class="text-slate-500 block text-[10px]">ช่วยปฏิบัติราชการ:</span>
+                <span class="inline-flex items-center gap-1.5 font-semibold text-sky-300">
+                  <i class="fa-solid fa-right-left text-[10px]"></i> ${escapeHtml(formatSecondedTo(p))}
+                </span>
+              </div>` : ''}
             </div>
           </div>
         </div>
