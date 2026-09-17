@@ -37,7 +37,7 @@ async function savePersonnelToCloud(record) {
 /**
  * อัปโหลดรูปภาพ (Base64) ขึ้น Google Drive ผ่าน Apps Script แล้วคืนลิงก์รูป
  */
-async function uploadPhotoToCloud(base64Data, fileName, mimeType) {
+async function uploadPhotoToCloud(base64Data, fileName, mimeType, personnelId, oldFileId) {
   const res = await fetch(API_URL, {
     method: 'POST',
     body: JSON.stringify({
@@ -45,7 +45,9 @@ async function uploadPhotoToCloud(base64Data, fileName, mimeType) {
       secret: API_SECRET,
       base64: base64Data,
       fileName,
-      mimeType
+      mimeType,
+      personnelId: personnelId || '',
+      oldFileId: oldFileId || ''
     })
   });
   const result = await res.json();
@@ -1344,7 +1346,7 @@ async function handleFormSubmit(event) {
       showToast('กำลังอัปโหลดรูปภาพขึ้นระบบคลาวด์...', 'info');
       const mimeType = avatar.substring(5, avatar.indexOf(';'));
       const ext = mimeType.split('/')[1] || 'jpg';
-      avatar = await uploadPhotoToCloud(avatar, `${newId}.${ext}`, mimeType);
+      avatar = await uploadPhotoToCloud(avatar, `${newId}.${ext}`, mimeType, newId, null);
     } catch (err) {
       showToast(`อัปโหลดรูปภาพไม่สำเร็จ: ${err.message}`, 'error');
       return;
