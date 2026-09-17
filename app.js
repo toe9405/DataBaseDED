@@ -48,8 +48,10 @@ async function deletePersonnelFromCloud(id) {
 
 /**
  * อัปโหลดรูปภาพ (Base64) ขึ้น Google Drive ผ่าน Apps Script แล้วคืนลิงก์รูป
+ * ถ้าส่ง personnelId / oldFileId ไปด้วย ฝั่ง Apps Script จะ "เขียนทับไฟล์เดิม"
+ * แทนการสร้างไฟล์ใหม่ (ไฟล์รูปไม่สะสมใน Drive และลิงก์เดิมยังใช้งานได้)
  */
-async function uploadPhotoToCloud(base64Data, fileName, mimeType) {
+async function uploadPhotoToCloud(base64Data, fileName, mimeType, personnelId, oldFileId) {
   const res = await fetch(API_URL, {
     method: 'POST',
     body: JSON.stringify({
@@ -57,7 +59,9 @@ async function uploadPhotoToCloud(base64Data, fileName, mimeType) {
       secret: API_SECRET,
       base64: base64Data,
       fileName,
-      mimeType
+      mimeType,
+      personnelId: personnelId || '',
+      oldFileId: oldFileId || ''
     })
   });
   const result = await res.json();
@@ -2059,7 +2063,10 @@ async function handleFormSubmit(event) {
       showToast('กำลังอัปโหลดรูปภาพขึ้นระบบคลาวด์...', 'info');
       const mimeType = avatar.substring(5, avatar.indexOf(';'));
       const ext = mimeType.split('/')[1] || 'jpg';
-      avatar = await uploadPhotoToCloud(avatar, `${recordId}.${ext}`, mimeType);
+      // ถ้าเป็นการแก้ไขและเคยมีรูปใน Drive อยู่แล้ว ให้ส่ง fileId เดิมไปเขียนทับ
+      const oldRecord = id ? personnelList.find(p => String(p.id) === String(id)) : null;
+      const oldFileId = oldRecord ? extractDriveFileId(oldRecord.avatar || '') : null;
+      avatar = await uploadPhotoToCloud(avatar, `${recordId}.${ext}`, mimeType, recordId, oldFileId);
     } catch (err) {
       showToast(`อัปโหลดรูปภาพไม่สำเร็จ: ${err.message}`, 'error');
       return;
