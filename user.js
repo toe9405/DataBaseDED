@@ -129,11 +129,17 @@ async function initData() {
   try {
     personnelList = await loadPersonnelFromCloud();
     personnelList = personnelList.filter(p => !p.rank || !p.rank.includes('พลทหาร'));
+    personnelList.forEach(p => {
+      if (p.id !== undefined && p.id !== null) p.id = String(p.id);
+    });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(personnelList)); // แคชไว้เผื่อออฟไลน์
   } catch (e) {
     console.error('โหลดจากคลาวด์ไม่สำเร็จ, ใช้ข้อมูลแคชล่าสุดแทน:', e);
     const cached = localStorage.getItem(STORAGE_KEY);
     personnelList = cached ? JSON.parse(cached) : [...INITIAL_PERSONNEL_DATA];
+    personnelList.forEach(p => {
+      if (p.id !== undefined && p.id !== null) p.id = String(p.id);
+    });
     showToast('เชื่อมต่อฐานข้อมูลคลาวด์ไม่ได้ กำลังแสดงข้อมูลที่แคชไว้ล่าสุด', 'error');
   }
 }
@@ -1377,7 +1383,7 @@ async function handleFormSubmit(event) {
 // ================= VIEW PROFILE CARD MODAL (read-only) =================
 
 function viewPersonnel(id) {
-  const p = personnelList.find(item => item.id === id);
+  const p = personnelList.find(item => String(item.id) === String(id));
   if (!p) return;
 
   currentViewingId = id;
