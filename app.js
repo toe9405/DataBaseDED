@@ -644,16 +644,19 @@ function getFilteredAndSortedPersonnel() {
 
   // 2. กรองตามกอง (Division Pills)
   if (currentFilter.division !== 'all') {
-    list = list.filter(p => p.department && p.department.includes(currentFilter.division));
+    list = list.filter(p => (p.department && p.department.includes(currentFilter.division)) || (p.secondedTo && p.secondedTo === currentFilter.division));
   }
 
   // 3. กรองตามกอง/แผนก ใน Dropdown (department - legacy, hidden but kept)
   if (currentFilter.department !== 'all') {
     if (currentFilter.department.startsWith('div:')) {
       const divName = currentFilter.department.replace('div:', '');
-      list = list.filter(p => p.department && p.department.includes(divName));
+      list = list.filter(p => (p.department && p.department.includes(divName)) || (p.secondedTo && p.secondedTo === divName));
     } else {
-      list = list.filter(p => p.department && (p.department === currentFilter.department || p.department.includes(currentFilter.department)));
+      list = list.filter(p => 
+        (p.department && (p.department === currentFilter.department || p.department.includes(currentFilter.department))) ||
+        (p.secondedTo && (p.secondedTo === currentFilter.department || (p.secondedToSection && p.secondedToSection === currentFilter.department)))
+      );
     }
   }
 
@@ -799,7 +802,8 @@ function initRosterState() {
 function getAvailableRosterDivisions() {
   const fromStructure = typeof ENERGY_DEPT_STRUCTURE !== 'undefined' ? ENERGY_DEPT_STRUCTURE.map(x => x.division) : [];
   const fromPeople = personnelList.map(rosterDivisionOf).filter(Boolean);
-  const combined = [...new Set([...fromStructure, ...fromPeople])];
+  const fromSeconded = personnelList.map(p => p.secondedTo).filter(Boolean);
+  const combined = [...new Set([...fromStructure, ...fromPeople, ...fromSeconded])];
   return combined.filter(d => d && d !== 'ไม่ระบุกอง');
 }
 
@@ -809,7 +813,10 @@ function rosterDivisionOf(p) {
   return known ? known.division : department.split(' (')[0];
 }
 
-function rosterSectionOf(p) {
+function rosterSectionOf(p, div = rosterDivision) {
+  if (p.secondedTo && p.secondedTo === div) {
+    return p.secondedToSection ? p.secondedToSection.trim() : UNSPECIFIED_SECTION;
+  }
   const matched = String(p.department || '').match(/\(([^)]+)\)/);
   return matched ? matched[1].trim() : UNSPECIFIED_SECTION;
 }
@@ -829,7 +836,7 @@ function rosterSecondmentNote(p, div = rosterDivision) {
 
 function rosterSectionsOfDivision(div = rosterDivision) {
   const standard = typeof ENERGY_DEPT_STRUCTURE !== 'undefined' ? (ENERGY_DEPT_STRUCTURE.find(x => x.division === div)?.sections || []) : [];
-  const allSections = [...new Set([...standard, ...peopleInRosterDivision(div).map(rosterSectionOf)])];
+  const allSections = [...new Set([...standard, ...peopleInRosterDivision(div).map(p => rosterSectionOf(p, div))])];
   return [
     UNSPECIFIED_SECTION,
     ...allSections.filter(s => s !== UNSPECIFIED_SECTION)
@@ -869,7 +876,7 @@ function rosterRemovedOf(section, div = rosterDivision) {
 }
 
 function rosterPeopleInSection(section, div = rosterDivision) {
-  return peopleInRosterDivision(div).filter(p => rosterSectionOf(p) === section);
+  return peopleInRosterDivision(div).filter(p => rosterSectionOf(p, div) === section);
 }
 
 function generateRosterRowId() {
