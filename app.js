@@ -204,11 +204,17 @@ async function initData() {
   try {
     personnelList = await loadPersonnelFromCloud();
     personnelList = personnelList.filter(p => !p.rank || !p.rank.includes('พลทหาร'));
+    personnelList.forEach(p => {
+      if (p.id !== undefined && p.id !== null) p.id = String(p.id);
+    });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(personnelList)); // แคชไว้เผื่อออฟไลน์
   } catch (e) {
     console.error('โหลดจากคลาวด์ไม่สำเร็จ, ใช้ข้อมูลแคชล่าสุดแทน:', e);
     const cached = localStorage.getItem(STORAGE_KEY);
     personnelList = cached ? JSON.parse(cached) : [...INITIAL_PERSONNEL_DATA];
+    personnelList.forEach(p => {
+      if (p.id !== undefined && p.id !== null) p.id = String(p.id);
+    });
     showToast('เชื่อมต่อฐานข้อมูลคลาวด์ไม่ได้ กำลังแสดงข้อมูลที่แคชไว้ล่าสุด', 'error');
   }
 }
@@ -1745,7 +1751,7 @@ function openAddModal() {
  * เปิด Modal แก้ไขข้อมูลกำลังพล
  */
 function editPersonnel(id) {
-  const p = personnelList.find(item => item.id === id);
+  const p = personnelList.find(item => String(item.id) === String(id));
   if (!p) return;
 
   document.getElementById('form-id').value = p.id;
@@ -2057,7 +2063,7 @@ async function handleFormSubmit(event) {
 
   if (id) {
     // แก้ไขข้อมูลเดิม (Update)
-    const idx = personnelList.findIndex(p => p.id === id);
+    const idx = personnelList.findIndex(p => String(p.id) === String(id));
     if (idx !== -1) {
       personnelList[idx] = {
         ...personnelList[idx],
@@ -2125,7 +2131,7 @@ async function handleFormSubmit(event) {
  * เปิด Modal ดูบัตรประจำตัวและประวัติกำลังพล
  */
 function viewPersonnel(id) {
-  const p = personnelList.find(item => item.id === id);
+  const p = personnelList.find(item => String(item.id) === String(id));
   if (!p) return;
 
   currentViewingId = id;
@@ -2278,7 +2284,7 @@ function printCurrentCard() {
 // ================= DELETE MODAL HANDLERS =================
 
 function deletePersonnelPrompt(id) {
-  const p = personnelList.find(item => item.id === id);
+  const p = personnelList.find(item => String(item.id) === String(id));
   if (!p) return;
 
   currentDeletingId = id;
@@ -2313,14 +2319,14 @@ function closeDeleteModal() {
 }
 
 async function executeDeletePersonnel(id) {
-  const p = personnelList.find(item => item.id === id);
+  const p = personnelList.find(item => String(item.id) === String(id));
   try {
     await deletePersonnelFromCloud(id);
   } catch (err) {
     showToast(`ลบข้อมูลไม่สำเร็จ: ${err.message}`, 'error');
     return;
   }
-  personnelList = personnelList.filter(item => item.id !== id);
+  personnelList = personnelList.filter(item => String(item.id) !== String(id));
   saveData(); // อัปเดตแคช LocalStorage ด้วย
   closeDeleteModal();
   renderApp();
