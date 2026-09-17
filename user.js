@@ -552,75 +552,385 @@ function renderApp() {
   }
 }
 
+// ================= ROSTER / ORG CHART SYSTEM (VIEW ONLY) =================
+const ROSTER_STORAGE_KEY = 'DED_PERSONNEL_ROSTER_LAYOUT_V3';
+const UNSPECIFIED_SECTION = 'ส่วนกลางกอง (ไม่ระบุแผนก)';
+let rosterLayout = {};
+let rosterDivision = '';
+
+function initRosterState() {
+  try {
+    rosterLayout = JSON.parse(localStorage.getItem(ROSTER_STORAGE_KEY) || '{}');
+  } catch (e) {
+    rosterLayout = {};
+  }
+  const allDivs = getAvailableRosterDivisions();
+  if (!rosterDivision || !allDivs.includes(rosterDivision)) {
+    rosterDivision = allDivs[0] || 'กองบัญชาการกรมการพลังงานทหาร';
+  }
+  ensureAllRosterLayouts(rosterDivision);
+}
+
+function getAvailableRosterDivisions() {
+  const fromStructure = typeof ENERGY_DEPT_STRUCTURE !== 'undefined' ? ENERGY_DEPT_STRUCTURE.map(x => x.division) : [];
+  const fromPeople = personnelList.map(rosterDivisionOf).filter(Boolean);
+  const combined = [...new Set([...fromStructure, ...fromPeople])];
+  return combined.filter(d => d && d !== 'ไม่ระบุกอง');
+}
+
+function rosterDivisionOf(p) {
+  const department = String(p.department || 'ไม่ระบุกอง');
+  const known = (typeof ENERGY_DEPT_STRUCTURE !== 'undefined' ? ENERGY_DEPT_STRUCTURE : []).find(x => department.includes(x.division));
+  return known ? known.division : department.split(' (')[0];
+}
+
+function rosterSectionOf(p) {
+  const matched = String(p.department || '').match(/\(([^)]+)\)/);
+  return matched ? matched[1].trim() : UNSPECIFIED_SECTION;
+}
+
+function peopleInRosterDivision(div = rosterDivision) {
+  return personnelList.filter(p => rosterDivisionOf(p) === div || p.secondedTo === div);
+}
+
+function rosterSecondmentNote(p, div = rosterDivision) {
+  if (!p.secondedTo) return '';
+  const home = rosterDivisionOf(p);
+  const target = p.secondedToSection ? p.secondedTo + ' (' + p.secondedToSection + ')' : p.secondedTo;
+  if (div === p.secondedTo && home !== p.secondedTo) return 'สังกัด ' + home + ' (ช่วยราชการ)';
+  if (div === home) return 'ช่วยราชการ ' + target;
+  return '';
+}
+
+function rosterSectionsOfDivision(div = rosterDivision) {
+  const standard = typeof ENERGY_DEPT_STRUCTURE !== 'undefined' ? (ENERGY_DEPT_STRUCTURE.find(x => x.division === div)?.sections || []) : [];
+  const allSections = [...new Set([...standard, ...peopleInRosterDivision(div).map(rosterSectionOf)])];
+  return [
+    UNSPECIFIED_SECTION,
+    ...allSections.filter(s => s !== UNSPECIFIED_SECTION)
+  ];
+}
+
+function rosterSectionLabel(section) {
+  return section === UNSPECIFIED_SECTION ? 'ส่วนกลางกอง' : escapeHtml(section);
+}
+
+function rosterKey(section, div = rosterDivision) {
+  return div + '::' + section;
+}
+
+function rosterLayoutOf(section, div = rosterDivision) {
+  const k = rosterKey(section, div);
+  let layout = rosterLayout[k];
+  if (Array.isArray(layout)) {
+    layout = { rows: layout, removed: [] };
+    rosterLayout[k] = layout;
+  }
+  if (!layout) {
+    layout = { rows: defaultRosterRows(rosterPeopleInSection(section, div)), removed: [] };
+    rosterLayout[k] = layout;
+  }
+  if (!Array.isArray(layout.removed)) layout.removed = [];
+  if (!Array.isArray(layout.rows)) layout.rows = [];
+  return layout;
+}
+
+function rosterRows(section, div = rosterDivision) {
+  return rosterLayoutOf(section, div).rows;
+}
+
+function rosterPeopleInSection(section, div = rosterDivision) {
+  return peopleInRosterDivision(div).filter(p => rosterSectionOf(p) === section);
+}
+
+function generateRosterRowId() {
+  return 'row-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
+}
+
+function defaultRosterRows(people) {
+  const result = [
+    { id: generateRosterRowId(), capacity: 1, people: [] },
+    { id: generateRosterRowId(), capacity: 2, people: [] },
+    { id: generateRosterRowId(), capacity: 3, people: [] }
+  ];
+  [...people]
+    .sort((a, b) => (Number(a.rankTier) || 99) - (Number(b.rankTier) || 99))
+    .forEach((p, i) => {
+      const rowIdx = i === 0 ? 0 : i <= 2 ? 1 : 2;
+      result[rowIdx].people.push(String(p.id));
+    });
+  result.forEach(r => {
+    r.capacity = Math.max(r.capacity, r.people.length || 1);
+  });
+  return result;
+}
+
+function ensureSectionLayout(section, div = rosterDivision) {
+  const pList = rosterPeopleInSection(section, div);
+  const validIds = new Set(pList.map(p => String(p.id)));
+  const layout = rosterLayoutOf(section, div);
+  layout.removed = layout.removed.filter(id => validIds.has(String(id)));
+  const removedSet = new Set(layout.removed.map(String));
+  const targetRows = layout.rows;
+  const used = new Set();
+
+  targetRows.forEach(row => {
+    row.people = (row.people || []).filter(id => validIds.has(String(id)) && !used.has(String(id)) && !removedSet.has(String(id)));
+    row.people.forEach(id => used.add(String(id)));
+    row.capacity = Math.max(Number(row.capacity) || 1, row.people.length);
+  });
+
+  const unplaced = [...validIds].filter(id => !used.has(id) && !removedSet.has(id));
+  if (unplaced.length > 0) {
+    if (!targetRows.length) {
+      targetRows.push({ id: generateRosterRowId(), capacity: Math.max(3, unplaced.length), people: [] });
+    }
+    const lastRow = targetRows[targetRows.length - 1];
+    lastRow.people.push(...unplaced);
+    lastRow.capacity = Math.max(lastRow.capacity, lastRow.people.length);
+  }
+}
+
+function ensureAllRosterLayouts(div = rosterDivision) {
+  rosterSectionsOfDivision(div).forEach(sec => ensureSectionLayout(sec, div));
+}
+
+function handleRosterDivisionChange(newDiv) {
+  rosterDivision = newDiv;
+  ensureAllRosterLayouts(rosterDivision);
+  renderOrgChart();
+}
+
+function getAssignedRosterPersonnel(div = rosterDivision) {
+  const list = [];
+  const secs = rosterSectionsOfDivision(div);
+  let globalOrder = 1;
+  secs.forEach(sec => {
+    const layout = rosterLayoutOf(sec, div);
+    layout.rows.forEach((row, rowIdx) => {
+      row.people.forEach((pid, orderInRow) => {
+        const p = personnelList.find(item => String(item.id) === String(pid));
+        if (p) {
+          list.push({
+            globalOrder: globalOrder++,
+            person: p,
+            section: sec,
+            rowId: row.id,
+            rowIndex: rowIdx + 1,
+            orderInRow: orderInRow + 1,
+            note: rosterSecondmentNote(p, div)
+          });
+        }
+      });
+    });
+  });
+  return list;
+}
+
+function printRosterChart() {
+  window.print();
+}
+
 /**
- * เรนเดอร์หน้า "ผังโครงสร้างอัตรากำลัง" (สำหรับหน้าบุคลากร - ดูอย่างเดียว)
+ * เรนเดอร์หน้า "ผังทำเนียบกำลังพล" (User Mode: ดูได้อย่างเดียว + ตารางรายชื่อในผัง)
  */
 function renderOrgChart() {
   const container = document.getElementById('orgchart-content');
   if (!container) return;
 
-  let html = '';
+  initRosterState();
+  const divisions = getAvailableRosterDivisions();
+  const divPeople = peopleInRosterDivision(rosterDivision);
+  const assignedList = getAssignedRosterPersonnel(rosterDivision);
+  const secs = rosterSectionsOfDivision(rosterDivision);
 
-  ENERGY_DEPT_STRUCTURE.forEach(divDef => {
-    const rows = getDivisionPositionRoster(divDef.division);
-    if (!rows || rows.length === 0) return;
+  const divSelectOptions = divisions.map(d => `<option value="${escapeHtml(d)}" ${d === rosterDivision ? 'selected' : ''}>${escapeHtml(d)}</option>`).join('');
 
-    let filledCount = 0;
-    let lastSection = undefined;
-    const rowsHtml = [];
+  // 1. Directory Preview Sections
+  const previewSectionsHtml = secs.map(sec => {
+    const targetRows = rosterRows(sec, rosterDivision);
+    const hasAssignedPeople = targetRows.some(r => r.people.length > 0);
+    if (!hasAssignedPeople) return '';
 
-    rows.forEach(row => {
-      const matched = findPersonnelForPosition(personnelList, divDef.division, row.section, row.title);
-      if (matched.length > 0) filledCount++;
+    const rowsPreviewHtml = targetRows.map(row => {
+      if (!row.people.length) return '';
+      const cardsHtml = row.people.map(pid => {
+        const p = personnelList.find(item => String(item.id) === String(pid));
+        if (!p) return '';
+        const note = rosterSecondmentNote(p, rosterDivision);
+        const photo = p.avatar
+          ? `<img src="${escapeHtml(p.avatar)}" class="w-full h-full object-cover cursor-pointer" onclick="viewPersonnel('${escapeHtml(p.id)}')" onerror="this.src='https://ded.mod.go.th/DED/media/unit-activities/logo-ded.png?ext=.png'">`
+          : `<div class="w-full h-full flex items-center justify-center text-slate-500 text-3xl bg-slate-900 cursor-pointer" onclick="viewPersonnel('${escapeHtml(p.id)}')"><i class="fa-solid fa-user"></i></div>`;
 
-      if (row.section !== lastSection) {
-        if (row.section) {
-          rowsHtml.push(
-            `<div class="pt-3 pb-1 px-1 text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-              <i class="fa-solid fa-folder-tree text-[10px]"></i>${escapeHtml(row.section)}
-            </div>`
-          );
-        }
-        lastSection = row.section;
-      }
-
-      let peopleHtml;
-      if (matched.length > 0) {
-        peopleHtml = matched.map(p =>
-          `<span class="px-2 py-0.5 rounded-full bg-emerald-900/30 text-emerald-300 border border-emerald-700/40 text-xs whitespace-nowrap">
-            ${escapeHtml(p.rank || '')} ${escapeHtml(p.firstName || '')} ${escapeHtml(p.lastName || '')}
-          </span>`
-        ).join(' ');
-      } else {
-        peopleHtml = `<span class="px-2 py-0.5 rounded-full bg-slate-800/60 text-slate-500 border border-slate-700/50 text-xs">ว่าง</span>`;
-      }
-
-      rowsHtml.push(
-        `<div class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg ${matched.length > 0 ? 'bg-slate-900/40' : 'bg-slate-900/15'} border border-slate-800/60">
-          <div class="text-sm text-slate-200">${escapeHtml(row.title)}</div>
-          <div class="flex flex-wrap gap-1.5 justify-end">${peopleHtml}</div>
-        </div>`
-      );
-    });
-
-    html += `
-      <div class="glass-panel rounded-2xl p-5 branch-card" style="border-left: 4px solid ${divDef.color || '#64748b'}">
-        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <div class="flex items-center gap-2">
-            <i class="fa-solid ${divDef.icon || 'fa-building'}" style="color:${divDef.color || '#94a3b8'}"></i>
-            <h3 class="text-base font-bold text-white">${escapeHtml(divDef.division)}</h3>
-            <span class="text-xs text-slate-500">${escapeHtml(divDef.shortName || '')}</span>
+        return `
+          <div class="roster-card text-center flex flex-col items-center max-w-[190px] mx-auto">
+            <div class="roster-photo-frame w-28 h-36 sm:w-36 sm:h-44 rounded-xl overflow-hidden bg-slate-800 relative mb-2">
+              ${photo}
+            </div>
+            <div class="w-full px-1">
+              <span class="text-xs sm:text-sm font-bold text-white block leading-tight truncate hover:text-amber-400 cursor-pointer" onclick="viewPersonnel('${escapeHtml(p.id)}')" title="${escapeHtml(p.rank || '')} ${escapeHtml(p.firstName || '')} ${escapeHtml(p.lastName || '')}">
+                ${escapeHtml(p.rank || '')} ${escapeHtml(p.firstName || '')} ${escapeHtml(p.lastName || '')}
+              </span>
+              <span class="text-[10px] sm:text-[11px] text-amber-300/90 block truncate mt-0.5" title="${escapeHtml(p.position || '')}">
+                ${escapeHtml(p.position || '-')}
+              </span>
+              ${note ? `<span class="text-[9px] text-sky-300 bg-sky-950/60 border border-sky-800/60 rounded px-1.5 py-0.5 inline-block truncate mt-1 max-w-full"><i class="fa-solid fa-right-left mr-0.5"></i>${escapeHtml(note)}</span>` : ''}
+            </div>
           </div>
-          <span class="text-xs font-medium px-2 py-1 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
-            มีคนครอง ${filledCount} / ${rows.length} อัตรา
-          </span>
+        `;
+      }).join('');
+
+      return `
+        <div class="grid gap-4 sm:gap-6 justify-center items-start mb-8" style="grid-template-columns: repeat(${Math.max(1, row.people.length)}, minmax(0, 190px))">
+          ${cardsHtml}
         </div>
-        <div class="space-y-1.5">${rowsHtml.join('')}</div>
+      `;
+    }).join('');
+
+    return `
+      <div class="border-t border-slate-800/80 pt-6 first:border-t-0 first:pt-0">
+        <h4 class="text-center text-sm sm:text-base font-bold text-indigo-300 uppercase tracking-wider mb-6 flex items-center justify-center gap-3">
+          <span class="w-12 h-px bg-indigo-500/30"></span>
+          ${rosterSectionLabel(sec)}
+          <span class="w-12 h-px bg-indigo-500/30"></span>
+        </h4>
+        ${rowsPreviewHtml}
       </div>
     `;
-  });
+  }).join('');
 
-  container.innerHTML = html || `<div class="glass-panel p-8 rounded-2xl text-center text-slate-400 text-sm">ไม่มีข้อมูลโครงสร้างตำแหน่ง</div>`;
+  // 2. Bottom Table Rows
+  const bottomTableRowsHtml = assignedList.map(item => {
+    const p = item.person;
+    const photo = p.avatar
+      ? `<img src="${escapeHtml(p.avatar)}" class="w-9 h-11 object-cover rounded bg-slate-800 border border-slate-700" onerror="this.src='https://ded.mod.go.th/DED/media/unit-activities/logo-ded.png?ext=.png'">`
+      : `<div class="w-9 h-11 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-500 text-xs"><i class="fa-solid fa-user"></i></div>`;
+
+    return `
+      <tr class="hover:bg-slate-800/40 transition">
+        <td class="py-3 px-3 text-center text-xs font-semibold text-slate-400">${item.globalOrder}</td>
+        <td class="py-3 px-3">
+          <span class="text-xs font-medium text-indigo-300 bg-indigo-950/40 border border-indigo-800/50 rounded-md px-2 py-0.5 whitespace-nowrap">
+            ${rosterSectionLabel(item.section)}
+          </span>
+        </td>
+        <td class="py-2 px-3">${photo}</td>
+        <td class="py-3 px-3">
+          <div class="font-semibold text-sm text-white hover:text-amber-400 cursor-pointer" onclick="viewPersonnel('${escapeHtml(p.id)}')">
+            ${escapeHtml(p.rank || '')} ${escapeHtml(p.firstName || '')} ${escapeHtml(p.lastName || '')}
+          </div>
+          <div class="text-[11px] text-slate-500">${escapeHtml(p.serviceId || '')}</div>
+        </td>
+        <td class="py-3 px-3">
+          <div class="text-xs text-slate-300 font-medium">${escapeHtml(p.position || '-')}</div>
+          ${item.note ? `<div class="text-[10px] text-amber-400 mt-0.5"><i class="fa-solid fa-right-left mr-0.5"></i>${escapeHtml(item.note)}</div>` : ''}
+        </td>
+        <td class="py-3 px-3 text-center">
+          <span class="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-amber-300 border border-slate-700 font-mono font-bold">
+            แถว ${item.rowIndex}
+          </span>
+        </td>
+        <td class="py-3 px-3 text-center font-mono text-xs text-slate-300">
+          ลำดับที่ ${item.orderInRow}
+        </td>
+        <td class="py-3 px-3 text-center">
+          <button onclick="viewPersonnel('${escapeHtml(p.id)}')" class="text-xs py-1 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 transition flex items-center gap-1 mx-auto">
+            <i class="fa-solid fa-id-card"></i> ดูประวัติ
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <!-- Top Control Bar -->
+    <div class="glass-panel rounded-2xl p-5 border border-slate-800 space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-semibold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 uppercase tracking-wider flex items-center gap-1">
+              <i class="fa-solid fa-sitemap text-[10px]"></i> ผังทำเนียบกำลังพล
+            </span>
+            <span class="text-xs text-slate-400">กรมการพลังงานทหาร</span>
+          </div>
+          <h2 class="text-xl font-bold text-white mt-1 flex items-center gap-2">
+            ${escapeHtml(rosterDivision)}
+            <span class="text-xs font-normal text-slate-400">(${divPeople.length} นายในสังกัด • ในผัง ${assignedList.length} นาย)</span>
+          </h2>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-1.5">
+            <label class="text-xs text-slate-400 whitespace-nowrap">เลือกกอง:</label>
+            <select id="roster-division-select" onchange="handleRosterDivisionChange(this.value)" class="py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-sm text-white font-medium focus:outline-none focus:border-amber-500">
+              ${divSelectOptions}
+            </select>
+          </div>
+
+          <button onclick="printRosterChart()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 border border-slate-700 text-xs font-semibold transition flex items-center gap-1.5">
+            <i class="fa-solid fa-print"></i>
+            <span>พิมพ์ผัง</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Official Executive Org Chart Display -->
+    <div class="glass-panel rounded-2xl p-6 sm:p-8 border border-slate-800 space-y-6 roster-print-container">
+      <!-- Official Header -->
+      <div class="text-center mb-10">
+        <div class="w-16 h-16 mx-auto mb-3 rounded-2xl bg-gradient-to-br from-amber-500 via-amber-600 to-amber-800 p-0.5 shadow-xl shadow-amber-500/30 flex items-center justify-center">
+          <div class="w-full h-full bg-slate-900 rounded-[14px] flex items-center justify-center">
+            <i class="fa-solid fa-bolt text-2xl text-amber-400"></i>
+          </div>
+        </div>
+        <div class="text-xs font-semibold text-amber-400 tracking-widest uppercase">กรมการพลังงานทหาร</div>
+        <h2 class="text-xl sm:text-2xl font-extrabold text-white mt-1 tracking-tight">ทำเนียบกำลังพล</h2>
+        <p class="text-sm font-semibold text-slate-300 mt-1">${escapeHtml(rosterDivision)}</p>
+      </div>
+
+      <div class="space-y-8">
+        ${previewSectionsHtml || '<p class="text-center py-16 text-slate-500 text-sm">ยังไม่มีกำลังพลที่ถูกจัดวางในผังของกองนี้</p>'}
+      </div>
+    </div>
+
+    <!-- Bottom Section: Complete Personnel Table in Roster -->
+    <div class="glass-panel rounded-2xl p-5 border border-slate-800 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3 flex-wrap gap-2">
+        <div>
+          <h3 class="font-bold text-white text-base flex items-center gap-2">
+            <i class="fa-solid fa-list-check text-emerald-400"></i> รายชื่อกำลังพลที่อยู่ในผังทำเนียบทั้งหมด
+          </h3>
+          <p class="text-xs text-slate-400 mt-0.5">แสดงรายชื่อกำลังพลทั้งหมดที่จัดวางอยู่ในผัง ${escapeHtml(rosterDivision)} (เรียงตามลำดับแถวในผัง)</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs px-3 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 font-semibold">
+            อยู่ในผังทั้งหมด: ${assignedList.length} นาย
+          </span>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm text-slate-300">
+          <thead class="bg-slate-900/90 text-xs uppercase text-slate-400 border-b border-slate-800">
+            <tr>
+              <th class="py-3 px-3 text-center">ลำดับ</th>
+              <th class="py-3 px-3">แผนก / หน่วย</th>
+              <th class="py-3 px-3">รูปภาพ</th>
+              <th class="py-3 px-3">ยศ - ชื่อ - นามสกุล</th>
+              <th class="py-3 px-3">ตำแหน่งหน้าที่</th>
+              <th class="py-3 px-3 text-center">แถวในผัง</th>
+              <th class="py-3 px-3 text-center">ลำดับในแถว</th>
+              <th class="py-3 px-3 text-center">ดูข้อมูล</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-800/60">
+            ${bottomTableRowsHtml || '<tr><td colspan="8" class="text-center py-8 text-slate-500 text-sm">ยังไม่มีกำลังพลที่ถูกจัดวางในผังทำเนียบของกองนี้</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
 }
 
 function renderKPIs() {
