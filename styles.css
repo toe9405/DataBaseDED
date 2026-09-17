@@ -358,19 +358,51 @@ body {
   box-shadow: 0 0 10px rgba(251, 191, 36, 0.15);
 }
 
+/* Roster / Org Chart Component Styles */
+.roster-card {
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.roster-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.5);
+  border-color: rgba(251, 191, 36, 0.4);
+}
+
+.roster-drop-active {
+  border-color: #6366f1 !important;
+  background-color: rgba(99, 102, 241, 0.08) !important;
+  box-shadow: 0 0 16px rgba(99, 102, 241, 0.25) inset;
+}
+
+.roster-photo-frame {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  transition: border-color 0.2s ease;
+}
+.roster-photo-frame:hover {
+  border-color: rgba(251, 191, 36, 0.6);
+}
+
 /* Print Stylesheet */
 @media print {
   body {
     background: #ffffff !important;
     color: #000000 !important;
   }
-  .no-print, header, #filter-section, #stats-section, .action-buttons {
+  .no-print, header, #filter-section, #stats-section, .action-buttons, #pin-gate, #division-pills-container, footer, .roster-admin-controls {
     display: none !important;
   }
-  .military-id-card, .printable-dossier {
+  .military-id-card, .printable-dossier, .roster-print-container {
     border: 2px solid #000 !important;
     background: #fff !important;
     color: #000 !important;
     box-shadow: none !important;
+  }
+  .roster-print-container * {
+    color: #000 !important;
+    border-color: #ccc !important;
+  }
+  .roster-photo-frame {
+    border: 1px solid #666 !important;
   }
 }
