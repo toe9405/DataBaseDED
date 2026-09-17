@@ -571,7 +571,11 @@ function convertToDirectImageUrl(url) {
   if (fileId) {
     // ใช้ endpoint thumbnail ซึ่งเสถียรกว่า uc?export=view เวลาฝังเป็น <img> (uc มักถูกบล็อกการ hotlink)
     // sz=w1000 คือขนาดที่ขอให้ Google ย่อมาให้ตอนแสดงผล ไม่ได้แก้ไขไฟล์ต้นฉบับใน Drive แต่อย่างใด
-    return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
+    // v=... คือเลขเวอร์ชันรูป (เวลาเขียนทับไฟล์เดิม fileId ไม่เปลี่ยน จึงต้องพา v ไปด้วย
+    // ไม่งั้นเบราว์เซอร์/Google จะยังแสดงรูปเก่าจากแคช)
+    const vMatch = trimmed.match(/[?&]v=(\d+)/);
+    const v = vMatch ? `&v=${vMatch[1]}` : '';
+    return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000${v}`;
   }
 
   return trimmed;
