@@ -65,6 +65,12 @@
 
         <!-- Action Buttons -->
         <div class="flex items-center space-x-2.5">
+          <!-- ดูผังทำเนียบ -->
+          <button onclick="setViewMode('orgchart')" title="ดูผังทำเนียบกำลังพล" class="p-2.5 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 hover:text-indigo-100 border border-indigo-400/30 transition text-sm flex items-center gap-1.5 shadow-sm">
+            <i class="fa-solid fa-sitemap"></i>
+            <span class="hidden sm:inline font-medium">ผังทำเนียบ</span>
+          </button>
+
           <!-- Add Personnel Button (only allowed action) -->
           <button onclick="openAddModal()" class="px-4 py-2.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-medium shadow-lg shadow-emerald-700/30 border border-emerald-400/30 transition transform hover:-translate-y-0.5 flex items-center gap-2">
             <i class="fa-solid fa-user-plus text-sm"></i>
