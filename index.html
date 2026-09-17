@@ -147,11 +147,11 @@
 
         <!-- Action Buttons -->
         <div class="flex items-center space-x-2.5">
-          <!-- ทดลองจัดผังทำเนียบ -->
-          <a href="roster-admin.html" title="ทดลองจัดผังทำเนียบกำลังพล" class="p-2.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 hover:text-indigo-100 border border-indigo-400/30 transition text-sm flex items-center gap-1.5">
+          <!-- จัดผังทำเนียบ -->
+          <button onclick="setViewMode('orgchart')" title="จัดผังทำเนียบกำลังพล" class="p-2.5 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 hover:text-indigo-100 border border-indigo-400/30 transition text-sm flex items-center gap-1.5 shadow-sm">
             <i class="fa-solid fa-sitemap"></i>
-            <span class="hidden xl:inline">จัดผังทำเนียบ</span>
-          </a>
+            <span class="hidden xl:inline font-medium">จัดผังทำเนียบ</span>
+          </button>
           <!-- Reset to Mock Data Button -->
           <button onclick="resetDataWithConfirm()" title="โหลดข้อมูลล่าสุดจากคลาวด์" class="p-2.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition text-sm flex items-center gap-1.5">
             <i class="fa-solid fa-rotate-left"></i>
