@@ -368,10 +368,61 @@ body {
   border-color: rgba(251, 191, 36, 0.4);
 }
 
+.roster-person-card {
+  transition: all 0.15s ease;
+}
+.roster-person-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.roster-btn-shift {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: rgba(30, 41, 59, 0.9);
+  color: #94a3b8;
+  border: 1px solid rgba(71, 85, 105, 0.6);
+  font-size: 9px;
+  transition: all 0.12s ease;
+  cursor: pointer;
+}
+.roster-btn-shift:hover {
+  background: rgba(99, 102, 241, 0.3);
+  color: #e2e8f0;
+  border-color: rgba(99, 102, 241, 0.7);
+}
+.roster-btn-shift:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.roster-highlight {
+  outline: 2px solid #f59e0b !important;
+  box-shadow: 0 0 14px rgba(245, 158, 11, 0.5) !important;
+  transform: scale(1.02);
+}
+
+.roster-dimmed {
+  opacity: 0.28 !important;
+  filter: grayscale(0.6);
+}
+
 .roster-drop-active {
   border-color: #6366f1 !important;
   background-color: rgba(99, 102, 241, 0.08) !important;
   box-shadow: 0 0 16px rgba(99, 102, 241, 0.25) inset;
+}
+
+.roster-drop-target-before {
+  border-left: 3px solid #f59e0b !important;
+}
+.roster-drop-target-after {
+  border-right: 3px solid #f59e0b !important;
 }
 
 .roster-photo-frame {
