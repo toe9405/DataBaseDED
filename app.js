@@ -1,7 +1,6 @@
 /**
- * user.js — หน้ากำลังพล (User Page)
- * Defense Energy Department Personnel — ค้นหา/ดูข้อมูลได้ปกติ แต่ "เพิ่มข้อมูลใหม่" ได้เท่านั้น
- * (ไม่มีสิทธิ์ แก้ไข / ลบ / นำเข้า / ส่งออก / รีเซ็ตข้อมูล — สิทธิ์เหล่านี้สงวนไว้สำหรับ Admin เท่านั้น)
+ * Military Personnel Management System - Core Application Logic
+ * ระบบจัดการข้อมูลกำลังพล กรมการพลังงานทหาร - โค้ดควบคุมการทำงานหลัก
  */
 
 // Key สำหรับบันทึกใน LocalStorage (สำรอง — ระบบหลักใช้ Google Sheet ผ่าน Apps Script ด้านล่าง)
@@ -22,7 +21,7 @@ async function loadPersonnelFromCloud() {
 }
 
 /**
- * บันทึกกำลังพล 1 คน (เพิ่มใหม่) ลง Google Sheet
+ * บันทึกกำลังพล 1 คน (เพิ่มใหม่ หรือแก้ไข) ลง Google Sheet
  */
 async function savePersonnelToCloud(record) {
   const res = await fetch(API_URL, {
@@ -35,7 +34,22 @@ async function savePersonnelToCloud(record) {
 }
 
 /**
+ * ลบกำลังพล 1 คน ออกจาก Google Sheet
+ */
+async function deletePersonnelFromCloud(id) {
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'deletePersonnel', secret: API_SECRET, id })
+  });
+  const result = await res.json();
+  if (!result.success) throw new Error(result.error || 'ลบข้อมูลไม่สำเร็จ');
+  return result;
+}
+
+/**
  * อัปโหลดรูปภาพ (Base64) ขึ้น Google Drive ผ่าน Apps Script แล้วคืนลิงก์รูป
+ * ถ้าส่ง personnelId / oldFileId ไปด้วย ฝั่ง Apps Script จะ "เขียนทับไฟล์เดิม"
+ * แทนการสร้างไฟล์ใหม่ (ไฟล์รูปไม่สะสมใน Drive และลิงก์เดิมยังใช้งานได้)
  */
 async function uploadPhotoToCloud(base64Data, fileName, mimeType, personnelId, oldFileId) {
   const res = await fetch(API_URL, {
@@ -55,42 +69,6 @@ async function uploadPhotoToCloud(base64Data, fileName, mimeType, personnelId, o
   return result.url;
 }
 
-/**
- * ดาวน์โหลดรูปประจำตัวเป็นไฟล์จริง (สำหรับปุ่มในหน้าดูประวัติกำลังพล)
- */
-async function downloadMyAvatar(url, personName) {
-  if (!url) {
-    showToast('ไม่พบรูปภาพสำหรับดาวน์โหลด', 'error');
-    return;
-  }
-  try {
-    if (url.startsWith('data:')) {
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `avatar-${personName || 'photo'}.jpg`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      return;
-    }
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('fetch failed');
-    const blob = await res.blob();
-    const objectUrl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = objectUrl;
-    a.download = `avatar-${personName || 'photo'}.jpg`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(objectUrl);
-  } catch (err) {
-    // ติด CORS หรือโหลดไม่ได้ — เปิดรูปในแท็บใหม่ให้ผู้ใช้กดบันทึกเอง
-    window.open(url, '_blank');
-    showToast('ไม่สามารถดาวน์โหลดอัตโนมัติได้ เปิดรูปในแท็บใหม่แทน คลิกขวาแล้วเลือก "บันทึกรูปภาพเป็น..."', 'info');
-  }
-}
-
 // ================= ผังกำลังพล: เก็บบนคลาวด์ให้ทุกเครื่องเห็นเหมือนกัน =================
 async function loadRosterFromCloud() {
   const res = await fetch(API_URL + '?action=roster');
@@ -99,12 +77,41 @@ async function loadRosterFromCloud() {
   return (data && !Array.isArray(data) && data.layout && typeof data.layout === 'object') ? data.layout : {};
 }
 
+async function saveRosterToCloud(layout) {
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'saveRoster', secret: API_SECRET, layout })
+  });
+  const result = await res.json();
+  if (!result.success) throw new Error(result.error || 'บันทึกผังกำลังพลไม่สำเร็จ');
+  return result;
+}
+
+let _rosterCloudTimer = null;
+function scheduleRosterCloudSave() {
+  clearTimeout(_rosterCloudTimer);
+  _rosterCloudTimer = setTimeout(async () => {
+    try {
+      await saveRosterToCloud(rosterLayout);
+    } catch (e) {
+      console.error('บันทึกผังขึ้นคลาวด์ไม่สำเร็จ:', e);
+      showToast('บันทึกผังขึ้นคลาวด์ไม่สำเร็จ (เครื่องอื่นอาจยังเห็นผังเก่า)', 'error');
+    }
+  }, 800);
+}
+
+// โหลดผังจากคลาวด์ลง LocalStorage; ถ้าคลาวด์ยังไม่มีผัง แต่เครื่องนี้มี ให้ส่งผังของเครื่องนี้ขึ้นไปเป็นต้นฉบับ
 async function syncRosterFromCloud() {
   try {
     const cloud = await loadRosterFromCloud();
-    if (Object.keys(cloud).length) localStorage.setItem(ROSTER_STORAGE_KEY, JSON.stringify(cloud));
+    if (Object.keys(cloud).length) {
+      localStorage.setItem(ROSTER_STORAGE_KEY, JSON.stringify(cloud));
+    } else {
+      const local = JSON.parse(localStorage.getItem(ROSTER_STORAGE_KEY) || '{}');
+      if (local && Object.keys(local).length) await saveRosterToCloud(local);
+    }
   } catch (e) {
-    console.warn('โหลดผังกำลังพลจากคลาวด์ไม่สำเร็จ ใช้ผังในเครื่องแทน:', e);
+    console.warn('ซิงก์ผังกำลังพลกับคลาวด์ไม่สำเร็จ ใช้ผังในเครื่องแทน:', e);
   }
 }
 
@@ -112,7 +119,7 @@ async function syncRosterFromCloud() {
 let personnelList = [];
 
 /**
- * จัดรูปแบบรหัสประจำตัว/รหัสระบบ (รหัส ID) ให้แสดงเป็นตัวเลข 4 หลักเสมอ โดยไม่ตัดเลข 0 นำหน้า
+ * จัดรูปแบบรหัสประจำตัว/รหัสระบบ ให้แสดงเป็นตัวเลข 4 หลักเสมอ โดยไม่ตัดเลข 0 นำหน้า
  * เช่น 1 -> "0001", "0025" -> "0025"
  */
 function formatPersonnelId(id) {
@@ -136,22 +143,121 @@ function generateNextPersonnelId() {
 let currentFilter = {
   branch: 'all',
   department: 'all',
-  division: 'all',
+  division: 'all',       // กอง filter (from division pills)
   rankCategory: 'all',
   searchQuery: '',
   sortBy: 'rank-asc'
 };
 let viewMode = 'grid'; // 'grid' | 'table'
 let currentViewingId = null;
+let currentDeletingId = null;
+
+// ================= ADMIN PIN CONFIG =================
+// เปลี่ยน PIN ได้ที่นี่
+const ADMIN_PIN = '6789';
+const PIN_SESSION_KEY = 'ADMIN_SESSION_UNLOCKED';
 
 // ================= INITIALIZATION =================
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', () => {
+  checkPinSession();
+});
+
+/**
+ * ตรวจสอบ Session PIN — ถ้าผ่านแล้วให้ข้ามหน้า PIN
+ */
+function checkPinSession() {
+  const unlocked = sessionStorage.getItem(PIN_SESSION_KEY);
+  if (unlocked === 'true') {
+    unlockAdmin();
+  } else {
+    // Focus PIN input
+    setTimeout(() => {
+      const pinInput = document.getElementById('pin-input');
+      if (pinInput) pinInput.focus();
+    }, 100);
+  }
+}
+
+/**
+ * Auto-submit เมื่อกรอก PIN ครบ 4 หลัก
+ */
+function handlePinInput(val) {
+  // กรองเฉพาะตัวเลข
+  const numeric = val.replace(/\D/g, '');
+  const pinInput = document.getElementById('pin-input');
+  if (pinInput) pinInput.value = numeric;
+
+  const errEl = document.getElementById('pin-error');
+  if (errEl) errEl.classList.add('hidden');
+
+  if (numeric.length === 4) {
+    submitPin();
+  }
+}
+
+/**
+ * ตรวจสอบ PIN และเปิดหน้า Admin
+ */
+function submitPin() {
+  const pinInput = document.getElementById('pin-input');
+  const errEl = document.getElementById('pin-error');
+  const enteredPin = pinInput ? pinInput.value.replace(/\D/g, '') : '';
+
+  if (enteredPin === ADMIN_PIN) {
+    sessionStorage.setItem(PIN_SESSION_KEY, 'true');
+    unlockAdmin();
+  } else {
+    if (errEl) errEl.classList.remove('hidden');
+    if (pinInput) {
+      pinInput.value = '';
+      pinInput.classList.add('border-red-500');
+      setTimeout(() => {
+        pinInput.classList.remove('border-red-500');
+        pinInput.focus();
+      }, 800);
+    }
+  }
+}
+
+/**
+ * ปลดล็อก Admin — ซ่อน PIN gate และโหลดระบบ
+ */
+async function unlockAdmin() {
+  const gate = document.getElementById('pin-gate');
+  if (gate) {
+    gate.style.opacity = '0';
+    gate.style.transition = 'opacity 0.3s ease';
+    setTimeout(() => gate.classList.add('hidden'), 300);
+  }
+  // Init app after unlock
   await initData();
   initClock();
+  setupDepartmentOptions();
   initFormDivisions();
   renderDivisionPills();
   renderApp();
-});
+}
+
+/**
+ * ล็อก Admin และกลับหน้า PIN
+ */
+function lockAdmin() {
+  sessionStorage.removeItem(PIN_SESSION_KEY);
+  const gate = document.getElementById('pin-gate');
+  if (gate) {
+    gate.classList.remove('hidden');
+    gate.style.opacity = '0';
+    requestAnimationFrame(() => {
+      gate.style.transition = 'opacity 0.3s ease';
+      gate.style.opacity = '1';
+    });
+    setTimeout(() => {
+      const pinInput = document.getElementById('pin-input');
+      if (pinInput) { pinInput.value = ''; pinInput.focus(); }
+    }, 350);
+  }
+}
+
 
 /**
  * โหลดข้อมูลกำลังพลจาก Google Sheet (คลาวด์)
@@ -207,26 +313,37 @@ function initClock() {
 
 // ================= FILTER & SEARCH HANDLERS =================
 
+/**
+ * เลือกกรองตามเหล่าทัพ/สังกัด (ทั้งหมด, ทบ., ทร., ทอ., ขรก.พลเรือน, พนักงานกรมการพลังงานทหาร)
+ */
 function selectBranchFilter(branch) {
   currentFilter.branch = branch;
 
+  // อัปเดต Active Tab UI
   ['all', 'army', 'navy', 'airforce', 'civil', 'employee'].forEach(b => {
     const tab = document.getElementById(`tab-${b}`);
     if (tab) {
-      if (b === branch) tab.classList.add('active');
-      else tab.classList.remove('active');
+      if (b === branch) {
+        tab.classList.add('active');
+      } else {
+        tab.classList.remove('active');
+      }
     }
   });
 
   renderApp();
 }
 
+/**
+ * สร้างปุ่มกรองระดับกอง (Division Pills) จาก ENERGY_DEPT_STRUCTURE
+ */
 function renderDivisionPills() {
   const container = document.getElementById('division-pills-container');
   if (!container) return;
 
   const active = currentFilter.division;
 
+  // ปุ่ม "ทุกกอง"
   let html = `
     <button
       onclick="selectDivisionFilter('all')"
@@ -238,6 +355,7 @@ function renderDivisionPills() {
     </button>
   `;
 
+  // ปุ่มแต่ละกอง
   ENERGY_DEPT_STRUCTURE.forEach(item => {
     const isActive = active === item.division;
     html += `
@@ -256,29 +374,109 @@ function renderDivisionPills() {
   container.innerHTML = html;
 }
 
+/**
+ * เลือกกรองตามกอง (Division Pills)
+ */
 function selectDivisionFilter(divName) {
   currentFilter.division = divName;
   renderDivisionPills();
   renderApp();
 }
 
+
+function setupDepartmentOptions() {
+  const deptSelect = document.getElementById('filter-department');
+  if (!deptSelect) return;
+
+  let html = '<option value="all">ทุกกอง / ทุกสำนัก / ทุกแผนก</option>';
+  
+  ENERGY_DEPT_STRUCTURE.forEach(item => {
+    html += `<optgroup label="🏢 ${escapeHtml(item.division)}">`;
+    html += `<option value="div:${escapeHtml(item.division)}">${escapeHtml(item.division)} (ทั้งหมด)</option>`;
+    
+    item.sections.forEach(sec => {
+      if (sec !== item.division) {
+        const fullVal = `${item.division} (${sec})`;
+        html += `<option value="${escapeHtml(fullVal)}">↳ ${escapeHtml(sec)}</option>`;
+      }
+    });
+    
+    html += `</optgroup>`;
+  });
+  
+  deptSelect.innerHTML = html;
+}
+
+function handleDepartmentFilter(val) {
+  currentFilter.department = val;
+  renderApp();
+}
+
 /**
- * กำหนดตัวเลือกในฟอร์มเพิ่มข้อมูล (Division & Section)
+ * กำหนดตัวเลือกในฟอร์ม เพิ่ม/แก้ไข (Division & Section)
  */
 function initFormDivisions() {
   const divSelect = document.getElementById('form-division');
   if (!divSelect) return;
 
-  divSelect.innerHTML = ENERGY_DEPT_STRUCTURE.map(item =>
-    `<option value="${escapeHtml(item.division)}">${escapeHtml(item.division)}</option>`
-  ).join('');
+  divSelect.innerHTML = ENERGY_DEPT_STRUCTURE.map(item => {
+    return `<option value="${escapeHtml(item.division)}">${escapeHtml(item.division)}</option>`;
+  }).join('');
+
+  populateSecondedToOptions();
 
   if (ENERGY_DEPT_STRUCTURE.length > 0) {
     handleFormDivisionChange(ENERGY_DEPT_STRUCTURE[0].division);
   }
 }
 
-function handleFormDivisionChange(divName) {
+/**
+ * เติมตัวเลือก "กองที่ไปช่วยราชการ" — รายชื่อกอง/สำนักทั้งหมด บวกตัวเลือก "ไม่ได้ช่วยราชการ"
+ */
+/**
+ * ข้อความแสดงกองปลายทางที่ไปช่วยราชการ พร้อมแผนก (ถ้ามีการระบุ)
+ */
+function formatSecondedTo(p) {
+  if (!p || !p.secondedTo) return '';
+  return p.secondedToSection ? `${p.secondedTo} (${p.secondedToSection})` : p.secondedTo;
+}
+
+function populateSecondedToOptions() {
+  const sel = document.getElementById('form-seconded-to');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">-- ไม่ได้ช่วยราชการ --</option>' +
+    ENERGY_DEPT_STRUCTURE.map(item => `<option value="${escapeHtml(item.division)}">${escapeHtml(item.division)}</option>`).join('');
+  sel.value = current || '';
+}
+
+/**
+ * เติมตัวเลือก "แผนก" ของกองปลายทางที่ไปช่วยราชการ ตามกองที่เลือกไว้ในช่อง form-seconded-to
+ * เรียกใหม่ทุกครั้งที่เปลี่ยนกองปลายทาง (หรือตอนเปิดฟอร์มแก้ไขข้อมูลเดิม)
+ */
+function handleSecondedToChange(divName, selectedSection = '') {
+  const secSel = document.getElementById('form-seconded-section');
+  if (!secSel) return;
+
+  const found = ENERGY_DEPT_STRUCTURE.find(item => item.division === divName);
+
+  if (!divName || !found || found.sections.length === 0 || (found.sections.length === 1 && found.sections[0] === found.division)) {
+    secSel.innerHTML = '<option value="">-- ไม่ระบุแผนก --</option>';
+    secSel.value = '';
+    secSel.disabled = true;
+    return;
+  }
+
+  secSel.disabled = false;
+  let html = '<option value="">-- ไม่ระบุแผนก --</option>';
+  found.sections.forEach(sec => {
+    const isSel = selectedSection === sec ? 'selected' : '';
+    html += `<option value="${escapeHtml(sec)}" ${isSel}>${escapeHtml(sec)}</option>`;
+  });
+  secSel.innerHTML = html;
+}
+
+function handleFormDivisionChange(divName, selectedSection = null) {
   const secSelect = document.getElementById('form-section');
   if (!secSelect) return;
 
@@ -292,7 +490,8 @@ function handleFormDivisionChange(divName) {
     secSelect.disabled = false;
     let html = `<option value="">${escapeHtml(found.division)} (ไม่ระบุแผนก)</option>`;
     found.sections.forEach(sec => {
-      html += `<option value="${escapeHtml(sec)}">${escapeHtml(sec)}</option>`;
+      const isSel = selectedSection === sec ? 'selected' : '';
+      html += `<option value="${escapeHtml(sec)}" ${isSel}>${escapeHtml(sec)}</option>`;
     });
     secSelect.innerHTML = html;
   }
@@ -304,13 +503,17 @@ function handleFormSectionChange() {
   const divSelect = document.getElementById('form-division');
   const secSelect = document.getElementById('form-section');
   const deptHidden = document.getElementById('form-department');
-
+  
   if (!divSelect || !deptHidden) return;
 
   const div = divSelect.value;
   const sec = secSelect && !secSelect.disabled ? secSelect.value : '';
 
-  deptHidden.value = sec ? `${div} (${sec})` : div;
+  if (sec) {
+    deptHidden.value = `${div} (${sec})`;
+  } else {
+    deptHidden.value = div;
+  }
 
   updatePositionSuggestions(div, sec);
 }
@@ -346,8 +549,39 @@ function updatePositionSuggestions(div, sec) {
 }
 
 /**
- * ตั้งค่าตำแหน่งลงในดรอปดาวน์ตำแหน่ง (ใช้ทั้งตอนแก้ไขข้อมูลเดิม และตอนคืนค่าหลังสร้างตัวเลือกใหม่)
- * ถ้าตำแหน่งไม่ตรงกับรายการมาตรฐาน จะเลือก "อื่นๆ" และเติมค่าเดิมไว้ในช่องกรอกเอง
+ * สลับการแสดงช่องกรอกตำแหน่งเอง เมื่อผู้ใช้เลือก "อื่นๆ" ในดรอปดาวน์ตำแหน่ง
+ */
+function handleFormPositionChange() {
+  const select = document.getElementById('form-position');
+  const customWrap = document.getElementById('form-position-custom-wrap');
+  if (!select || !customWrap) return;
+
+  if (select.value === '__other__') {
+    customWrap.classList.remove('hidden');
+  } else {
+    customWrap.classList.add('hidden');
+    const customInput = document.getElementById('form-position-custom');
+    if (customInput) customInput.value = '';
+  }
+}
+
+/**
+ * อ่านค่าตำแหน่งที่เลือกจริงจากฟอร์ม (รองรับกรณีเลือก "อื่นๆ" แล้วพิมพ์เอง)
+ */
+function getFormPositionValue() {
+  const select = document.getElementById('form-position');
+  if (!select) return '';
+  if (select.value === '__other__') {
+    const customInput = document.getElementById('form-position-custom');
+    return customInput ? customInput.value.trim() : '';
+  }
+  return select.value.trim();
+}
+
+/**
+ * ตั้งค่าตำแหน่งปัจจุบันของกำลังพลลงในดรอปดาวน์ตำแหน่ง (ใช้ตอนเปิดฟอร์มแก้ไข)
+ * ถ้าตำแหน่งเดิมไม่ตรงกับรายการมาตรฐาน จะเลือก "อื่นๆ" และเติมค่าเดิมไว้ในช่องกรอกเอง
+ * โดยไม่มีการแก้ไขค่าตำแหน่งเดิมของกำลังพลแต่อย่างใด
  */
 function setFormPositionValue(positionText) {
   const select = document.getElementById('form-position');
@@ -382,41 +616,17 @@ function setFormPositionValue(positionText) {
 }
 
 /**
- * สลับการแสดงช่องกรอกตำแหน่งเอง เมื่อผู้ใช้เลือก "อื่นๆ" ในดรอปดาวน์ตำแหน่ง
+ * ค้นหาแบบ Real-time
  */
-function handleFormPositionChange() {
-  const select = document.getElementById('form-position');
-  const customWrap = document.getElementById('form-position-custom-wrap');
-  if (!select || !customWrap) return;
-
-  if (select.value === '__other__') {
-    customWrap.classList.remove('hidden');
-  } else {
-    customWrap.classList.add('hidden');
-    const customInput = document.getElementById('form-position-custom');
-    if (customInput) customInput.value = '';
-  }
-}
-
-/**
- * อ่านค่าตำแหน่งที่เลือกจริงจากฟอร์ม (รองรับกรณีเลือก "อื่นๆ" แล้วพิมพ์เอง)
- */
-function getFormPositionValue() {
-  const select = document.getElementById('form-position');
-  if (!select) return '';
-  if (select.value === '__other__') {
-    const customInput = document.getElementById('form-position-custom');
-    return customInput ? customInput.value.trim() : '';
-  }
-  return select.value.trim();
-}
-
 function handleSearch(query) {
   currentFilter.searchQuery = query.trim().toLowerCase();
   const clearBtn = document.getElementById('clear-search-btn');
   if (clearBtn) {
-    if (query.length > 0) clearBtn.classList.remove('hidden');
-    else clearBtn.classList.add('hidden');
+    if (query.length > 0) {
+      clearBtn.classList.remove('hidden');
+    } else {
+      clearBtn.classList.add('hidden');
+    }
   }
   renderApp();
 }
@@ -470,6 +680,9 @@ function clearAllFilters() {
   const clearBtn = document.getElementById('clear-search-btn');
   if (clearBtn) clearBtn.classList.add('hidden');
 
+  const deptSelect = document.getElementById('filter-department');
+  if (deptSelect) deptSelect.value = 'all';
+
   const rankCatSelect = document.getElementById('filter-rank-category');
   if (rankCatSelect) rankCatSelect.value = 'all';
 
@@ -482,22 +695,41 @@ function clearAllFilters() {
 
 // ================= DATA PROCESSING & SORTING =================
 
+/**
+ * กรองและเรียงลำดับข้อมูลกำลังพลตามเงื่อนไขที่กำหนด
+ */
 function getFilteredAndSortedPersonnel() {
   let list = [...personnelList];
 
+  // 1. กรองตามเหล่าทัพ/สังกัดเดิม (Branch)
   if (currentFilter.branch !== 'all') {
     list = list.filter(p => p.branch === currentFilter.branch);
   }
 
+  // 2. กรองตามกอง (Division Pills)
   if (currentFilter.division !== 'all') {
     list = list.filter(p => (p.department && p.department.includes(currentFilter.division)) || (p.secondedTo && p.secondedTo === currentFilter.division));
   }
 
+  // 3. กรองตามกอง/แผนก ใน Dropdown (department - legacy, hidden but kept)
+  if (currentFilter.department !== 'all') {
+    if (currentFilter.department.startsWith('div:')) {
+      const divName = currentFilter.department.replace('div:', '');
+      list = list.filter(p => (p.department && p.department.includes(divName)) || (p.secondedTo && p.secondedTo === divName));
+    } else {
+      list = list.filter(p => 
+        (p.department && (p.department === currentFilter.department || p.department.includes(currentFilter.department))) ||
+        (p.secondedTo && (p.secondedTo === currentFilter.department || (p.secondedToSection && p.secondedToSection === currentFilter.department)))
+      );
+    }
+  }
+
+  // 3. กรองตามหมวดหมู่ชั้นยศ (Rank Category)
   if (currentFilter.rankCategory !== 'all') {
     list = list.filter(p => {
       const tier = p.rankTier || 99;
       const isEmp = p.branch === 'employee' || (p.rank && (p.rank.includes('พนักงาน') || p.rank.includes('ลูกจ้าง')));
-
+      
       if (currentFilter.rankCategory === 'general') return !isEmp && tier >= 1 && tier <= 4;
       if (currentFilter.rankCategory === 'field') return !isEmp && tier >= 5 && tier <= 11;
       if (currentFilter.rankCategory === 'nco') return !isEmp && tier >= 12 && tier <= 18;
@@ -506,35 +738,51 @@ function getFilteredAndSortedPersonnel() {
     });
   }
 
+  // 4. กรองตามคำค้นหา (Search Query)
   if (currentFilter.searchQuery) {
     const q = currentFilter.searchQuery;
     list = list.filter(p => {
       const fullName = `${p.firstName} ${p.lastName}`.toLowerCase();
       const rank = (p.rank || '').toLowerCase();
       const serviceId = (p.serviceId || '').toLowerCase();
-      const pid = formatPersonnelId(p.id).toLowerCase();
-      const rawPid = String(p.id || '').toLowerCase();
       const dept = (p.department || '').toLowerCase();
       const pos = (p.position || '').toLowerCase();
-      return fullName.includes(q) || rank.includes(q) || serviceId.includes(q) || pid.includes(q) || rawPid.includes(q) || dept.includes(q) || pos.includes(q);
+      const pid = formatPersonnelId(p.id).toLowerCase();
+      const rawPid = String(p.id || '').toLowerCase();
+      return fullName.includes(q) || rank.includes(q) || serviceId.includes(q) || dept.includes(q) || pos.includes(q) || pid.includes(q) || rawPid.includes(q);
     });
   }
 
+  // 5. จัดเรียงลำดับ (Sorting)
   list.sort((a, b) => {
     switch (currentFilter.sortBy) {
       case 'rank-asc':
-        if (a.rankTier !== b.rankTier) return a.rankTier - b.rankTier;
-        if (a.joinedYear && b.joinedYear && a.joinedYear !== b.joinedYear) return a.joinedYear - b.joinedYear;
+        // ยศสูงที่สุดไปต่ำสุด: Rank Tier 1 -> 2 -> 3 (ตัวเลขน้อยคือยศสูง)
+        if (a.rankTier !== b.rankTier) {
+          return a.rankTier - b.rankTier;
+        }
+        // หากยศเท่ากัน ให้เรียงตามปีรับราชการ (อาวุโสกว่ามาก่อน)
+        if (a.joinedYear && b.joinedYear && a.joinedYear !== b.joinedYear) {
+          return a.joinedYear - b.joinedYear;
+        }
         return a.firstName.localeCompare(b.firstName, 'th');
+
       case 'rank-desc':
-        if (a.rankTier !== b.rankTier) return b.rankTier - a.rankTier;
+        // ยศต่ำสุดไปสูงที่สุด
+        if (a.rankTier !== b.rankTier) {
+          return b.rankTier - a.rankTier;
+        }
         return a.firstName.localeCompare(b.firstName, 'th');
+
       case 'name-asc':
         return a.firstName.localeCompare(b.firstName, 'th');
+
       case 'name-desc':
         return b.firstName.localeCompare(a.firstName, 'th');
+
       case 'seniority-asc':
         return (a.joinedYear || 9999) - (b.joinedYear || 9999);
+
       default:
         return a.rankTier - b.rankTier;
     }
@@ -545,6 +793,9 @@ function getFilteredAndSortedPersonnel() {
 
 // ================= RENDER FUNCTIONS =================
 
+/**
+ * เรนเดอร์หน้าจอหลักทั้งหมด (KPIs, Tabs, List)
+ */
 function renderApp() {
   renderKPIs();
 
@@ -555,7 +806,7 @@ function renderApp() {
   const filteredCountEl = document.getElementById('filtered-count');
   const totalCountEl = document.getElementById('total-count');
 
-  // โหมดผังอัตรากำลัง: แสดงทุกกอง/แผนกพร้อมสถานะ "มีคนครอง/ว่าง" (ดูอย่างเดียว)
+  // โหมดผังอัตรากำลัง: แสดงทุกกอง/แผนกพร้อมสถานะ "มีคนครอง/ว่าง" ไม่ใช้ตัวกรองค้นหาปกติ
   if (viewMode === 'orgchart') {
     if (emptyState) emptyState.classList.add('hidden');
     if (gridContainer) gridContainer.classList.add('hidden');
@@ -570,6 +821,7 @@ function renderApp() {
 
   const filteredList = getFilteredAndSortedPersonnel();
 
+  // อัปเดต Status Bar ตัวเลขสรุป
   if (filteredCountEl) filteredCountEl.textContent = filteredList.length;
   if (totalCountEl) totalCountEl.textContent = personnelList.length;
 
@@ -593,11 +845,12 @@ function renderApp() {
   }
 }
 
-// ================= ROSTER / ORG CHART SYSTEM (VIEW ONLY) =================
+// ================= ROSTER / ORG CHART MANAGEMENT SYSTEM =================
 const ROSTER_STORAGE_KEY = 'DED_PERSONNEL_ROSTER_LAYOUT_V3';
 const UNSPECIFIED_SECTION = 'ส่วนกลางกอง (ไม่ระบุแผนก)';
 let rosterLayout = {};
 let rosterDivision = '';
+let rosterDragPersonId = null;
 
 function initRosterState() {
   try {
@@ -685,6 +938,10 @@ function rosterRows(section, div = rosterDivision) {
   return rosterLayoutOf(section, div).rows;
 }
 
+function rosterRemovedOf(section, div = rosterDivision) {
+  return rosterLayoutOf(section, div).removed;
+}
+
 function rosterPeopleInSection(section, div = rosterDivision) {
   return peopleInRosterDivision(div).filter(p => rosterSectionOf(p, div) === section);
 }
@@ -741,12 +998,377 @@ function ensureAllRosterLayouts(div = rosterDivision) {
   rosterSectionsOfDivision(div).forEach(sec => ensureSectionLayout(sec, div));
 }
 
+function saveRosterLayout(showMessage = false) {
+  localStorage.setItem(ROSTER_STORAGE_KEY, JSON.stringify(rosterLayout));
+  scheduleRosterCloudSave();
+  if (showMessage) {
+    showToast(`บันทึกผังทำเนียบ ${rosterDivision} เรียบร้อยแล้ว`, 'success');
+  }
+}
+
+/**
+ * สลับ ID ใน roster layout เมื่อ Admin เปลี่ยนรหัสประจำตัวของกำลังพล
+ */
+function replacePersonIdInRosterLayout(oldId, newId) {
+  const oStr = String(oldId);
+  const nStr = String(newId);
+  let changed = false;
+  Object.keys(rosterLayout).forEach(k => {
+    const layout = rosterLayout[k];
+    if (layout && Array.isArray(layout.rows)) {
+      layout.rows.forEach(r => {
+        if (Array.isArray(r.people)) {
+          const idx = r.people.map(String).indexOf(oStr);
+          if (idx !== -1) {
+            r.people[idx] = nStr;
+            changed = true;
+          }
+        }
+      });
+    }
+    if (layout && Array.isArray(layout.removed)) {
+      const idx = layout.removed.map(String).indexOf(oStr);
+      if (idx !== -1) {
+        layout.removed[idx] = nStr;
+        changed = true;
+      }
+    }
+  });
+  if (changed) {
+    saveRosterLayout(false);
+  }
+}
+
+/**
+ * ย้ายบุคลากรไปยังแถวและแผนกที่กำหนด (เวลาย้ายจะย้ายเลย ไม่มีการเกิดชื่อซ้ำ)
+ */
+function moveRosterPerson(personId, targetSection, targetRowId, div = rosterDivision) {
+  const pidStr = String(personId);
+  // ลบออกจากทุกแถว ทุกแผนก และรายการที่ถูกลบของกองนี้
+  rosterSectionsOfDivision(div).forEach(sec => {
+    const layout = rosterLayoutOf(sec, div);
+    layout.rows.forEach(r => {
+      r.people = (r.people || []).filter(pid => String(pid) !== pidStr);
+    });
+    layout.removed = (layout.removed || []).filter(pid => String(pid) !== pidStr);
+  });
+
+  const targetLayout = rosterLayoutOf(targetSection, div);
+  const targetRow = targetLayout.rows.find(r => r.id === targetRowId);
+  if (targetRow) {
+    targetRow.people.push(pidStr);
+    targetRow.capacity = Math.max(Number(targetRow.capacity) || 1, targetRow.people.length);
+  }
+
+  saveRosterLayout(false);
+  renderOrgChart();
+  const p = personnelList.find(item => String(item.id) === pidStr);
+  if (p) {
+    showToast(`ย้าย ${p.rank || ''} ${p.firstName || ''} เข้าแถวเรียบร้อย`, 'info');
+  }
+}
+
+/**
+ * แทรกบุคลากรลงตำแหน่งที่แน่นอน (ลากวางหน้าหรือหลังการ์ดเป้าหมาย)
+ */
+function insertRosterPersonAt(personId, targetSection, targetRowId, targetPersonId, isBefore = true, div = rosterDivision) {
+  const pidStr = String(personId);
+  const targetPidStr = String(targetPersonId);
+
+  rosterSectionsOfDivision(div).forEach(sec => {
+    const layout = rosterLayoutOf(sec, div);
+    layout.rows.forEach(r => {
+      r.people = (r.people || []).filter(pid => String(pid) !== pidStr);
+    });
+    layout.removed = (layout.removed || []).filter(pid => String(pid) !== pidStr);
+  });
+
+  const targetLayout = rosterLayoutOf(targetSection, div);
+  const targetRow = targetLayout.rows.find(r => r.id === targetRowId);
+  if (targetRow) {
+    if (!Array.isArray(targetRow.people)) targetRow.people = [];
+    const targetIdx = targetRow.people.map(String).indexOf(targetPidStr);
+    if (targetIdx !== -1) {
+      const insertIdx = isBefore ? targetIdx : targetIdx + 1;
+      targetRow.people.splice(insertIdx, 0, pidStr);
+    } else {
+      targetRow.people.push(pidStr);
+    }
+    targetRow.capacity = Math.max(Number(targetRow.capacity) || 1, targetRow.people.length);
+  }
+
+  saveRosterLayout(false);
+  renderOrgChart();
+  const p = personnelList.find(item => String(item.id) === pidStr);
+  if (p) {
+    showToast(`จัดตำแหน่ง ${p.rank || ''} ${p.firstName || ''} เรียบร้อย`, 'info');
+  }
+}
+
+/**
+ * ขยับตำแหน่งบุคคลในแถวเดียวกัน (ซ้าย / ขวา)
+ */
+function moveRosterPersonInRow(section, rowId, personId, delta, div = rosterDivision) {
+  const layout = rosterLayoutOf(section, div);
+  const row = layout.rows.find(r => r.id === rowId);
+  if (!row || !row.people) return;
+  const pidStr = String(personId);
+  const currentIndex = row.people.map(String).indexOf(pidStr);
+  if (currentIndex === -1) return;
+
+  const targetIndex = currentIndex + delta;
+  if (targetIndex < 0 || targetIndex >= row.people.length) return;
+
+  // Swap
+  const temp = row.people[currentIndex];
+  row.people[currentIndex] = row.people[targetIndex];
+  row.people[targetIndex] = temp;
+
+  saveRosterLayout(false);
+  renderOrgChart();
+}
+
+/**
+ * ย้ายบุคคลขึ้นแถวบน (-1) หรือลงแถวล่าง (+1) ในแผนกเดียวกัน
+ */
+function moveRosterPersonRowShift(section, currentRowId, personId, delta, div = rosterDivision) {
+  const layout = rosterLayoutOf(section, div);
+  const currentIdx = layout.rows.findIndex(r => r.id === currentRowId);
+  if (currentIdx === -1) return;
+
+  const targetIdx = currentIdx + delta;
+  if (targetIdx < 0 || targetIdx >= layout.rows.length) {
+    if (delta > 0 && targetIdx === layout.rows.length) {
+      // ถ้ากดลงแถวล่างที่แถวสุดท้าย ให้สร้างแถวใหม่ให้อัตโนมัติ
+      const newRowId = generateRosterRowId();
+      layout.rows.push({ id: newRowId, capacity: 2, people: [] });
+      moveRosterPerson(personId, section, newRowId, div);
+      return;
+    }
+    return;
+  }
+
+  const targetRow = layout.rows[targetIdx];
+  moveRosterPerson(personId, section, targetRow.id, div);
+}
+
+/**
+ * สลับลำดับแถว (เลื่อนแถวขึ้นหรือลง)
+ */
+function moveRosterRowOrder(section, rowId, delta, div = rosterDivision) {
+  const layout = rosterLayoutOf(section, div);
+  const currentIdx = layout.rows.findIndex(r => r.id === rowId);
+  if (currentIdx === -1) return;
+
+  const targetIdx = currentIdx + delta;
+  if (targetIdx < 0 || targetIdx >= layout.rows.length) return;
+
+  const temp = layout.rows[currentIdx];
+  layout.rows[currentIdx] = layout.rows[targetIdx];
+  layout.rows[targetIdx] = temp;
+
+  saveRosterLayout(false);
+  renderOrgChart();
+}
+
+/**
+ * ปรับความจุของแถว (+ หรือ -)
+ */
+function adjustRosterRowCapacity(section, rowId, delta, div = rosterDivision) {
+  const layout = rosterLayoutOf(section, div);
+  const row = layout.rows.find(r => r.id === rowId);
+  if (!row) return;
+  const current = Number(row.capacity) || 1;
+  const minCap = Math.max(1, row.people.length);
+  row.capacity = Math.max(minCap, current + delta);
+  saveRosterLayout(false);
+  renderOrgChart();
+}
+
+/**
+ * ปรับความจุให้พอดีกับจำนวนคนที่มีอยู่ในแถว
+ */
+function fitRosterRowCapacity(section, rowId, div = rosterDivision) {
+  const layout = rosterLayoutOf(section, div);
+  const row = layout.rows.find(r => r.id === rowId);
+  if (!row) return;
+  row.capacity = Math.max(1, row.people.length);
+  saveRosterLayout(false);
+  renderOrgChart();
+}
+
+/**
+ * จัดเรียงบุคคลในแถวตามชั้นยศ (สูงที่สุดไปต่ำ)
+ */
+function sortRosterRowByRank(section, rowId, div = rosterDivision) {
+  const layout = rosterLayoutOf(section, div);
+  const row = layout.rows.find(r => r.id === rowId);
+  if (!row || row.people.length <= 1) return;
+
+  row.people.sort((a, b) => {
+    const pA = personnelList.find(p => String(p.id) === String(a));
+    const pB = personnelList.find(p => String(p.id) === String(b));
+    const tA = pA ? (Number(pA.rankTier) || 99) : 99;
+    const tB = pB ? (Number(pB.rankTier) || 99) : 99;
+    return tA - tB;
+  });
+
+  saveRosterLayout(false);
+  renderOrgChart();
+  showToast('จัดเรียงคนในแถวตามชั้นยศเรียบร้อย', 'info');
+}
+
+/**
+ * จัดเรียงกำลังพลทั้งแผนกตามชั้นยศ (Auto-Sort Section by Rank)
+ */
+function sortRosterSectionByRank(section, div = rosterDivision) {
+  const layout = rosterLayoutOf(section, div);
+  const secPeople = rosterPeopleInSection(section, div);
+  const removedSet = new Set(layout.removed.map(String));
+  const activePeople = secPeople.filter(p => !removedSet.has(String(p.id)));
+
+  // จัดเรียงตาม rankTier
+  activePeople.sort((a, b) => (Number(a.rankTier) || 99) - (Number(b.rankTier) || 99));
+
+  if (!layout.rows.length) {
+    layout.rows = defaultRosterRows(activePeople);
+  } else {
+    // ล้างคนในแต่ละแถวก่อน
+    layout.rows.forEach(r => { r.people = []; });
+    // เติมคนตามความจุของแต่ละแถว
+    let pIdx = 0;
+    layout.rows.forEach(r => {
+      const cap = Math.max(Number(r.capacity) || 1, 1);
+      while (r.people.length < cap && pIdx < activePeople.length) {
+        r.people.push(String(activePeople[pIdx++].id));
+      }
+    });
+    // ถ้ายังมีคนเหลือ ให้ใส่แถวสุดท้ายและขยายความจุ
+    while (pIdx < activePeople.length) {
+      const lastRow = layout.rows[layout.rows.length - 1];
+      lastRow.people.push(String(activePeople[pIdx++].id));
+      lastRow.capacity = Math.max(lastRow.capacity, lastRow.people.length);
+    }
+  }
+
+  saveRosterLayout(false);
+  renderOrgChart();
+  showToast(`จัดเรียงผังแผนก "${rosterSectionLabel(section)}" ตามชั้นยศเรียบร้อย`, 'success');
+}
+
+/**
+ * ค้นหาชื่อกำลังพลในผังแบบเรียลไทม์ (Roster Quick Search)
+ */
+let rosterSearchQuery = '';
+function handleRosterSearch(query) {
+  rosterSearchQuery = (query || '').trim().toLowerCase();
+  applyRosterSearchHighlight();
+}
+
+function applyRosterSearchHighlight() {
+  const q = rosterSearchQuery;
+  const cards = document.querySelectorAll('.roster-person-card, .roster-card');
+  cards.forEach(c => {
+    c.classList.remove('roster-highlight', 'roster-dimmed');
+    if (!q) return;
+    const text = c.textContent.toLowerCase();
+    if (text.includes(q)) {
+      c.classList.add('roster-highlight');
+    } else {
+      c.classList.add('roster-dimmed');
+    }
+  });
+}
+
+/**
+ * นำบุคลากรออกจากผัง (ไปอยู่ในกล่อง "นำออกจากผัง")
+ */
+function removeRosterPerson(section, personId, div = rosterDivision) {
+  const pidStr = String(personId);
+  rosterSectionsOfDivision(div).forEach(sec => {
+    const layout = rosterLayoutOf(sec, div);
+    layout.rows.forEach(r => {
+      r.people = (r.people || []).filter(pid => String(pid) !== pidStr);
+    });
+  });
+
+  const layout = rosterLayoutOf(section, div);
+  if (!layout.removed.map(String).includes(pidStr)) {
+    layout.removed.push(pidStr);
+  }
+
+  saveRosterLayout(false);
+  renderOrgChart();
+  showToast('นำบุคลากรออกจากผังแล้ว', 'info');
+}
+
+/**
+ * นำบุคลากรกลับเข้าผัง
+ */
+function restoreRosterPerson(section, personId, div = rosterDivision) {
+  const pidStr = String(personId);
+  rosterSectionsOfDivision(div).forEach(sec => {
+    const layout = rosterLayoutOf(sec, div);
+    layout.removed = (layout.removed || []).filter(pid => String(pid) !== pidStr);
+    layout.rows.forEach(r => {
+      r.people = (r.people || []).filter(pid => String(pid) !== pidStr);
+    });
+  });
+
+  const layout = rosterLayoutOf(section, div);
+  if (!layout.rows.length) {
+    layout.rows.push({ id: generateRosterRowId(), capacity: 1, people: [] });
+  }
+  layout.rows[0].people.push(pidStr);
+  layout.rows[0].capacity = Math.max(layout.rows[0].capacity, layout.rows[0].people.length);
+
+  saveRosterLayout(false);
+  renderOrgChart();
+  showToast('นำบุคลากรกลับเข้าผังแล้ว', 'success');
+}
+
+function addRosterRow(section, div = rosterDivision) {
+  const layout = rosterLayoutOf(section, div);
+  layout.rows.push({ id: generateRosterRowId(), capacity: 1, people: [] });
+  saveRosterLayout(false);
+  renderOrgChart();
+}
+
+function removeRosterRow(section, rowId, div = rosterDivision) {
+  const layout = rosterLayoutOf(section, div);
+  const index = layout.rows.findIndex(r => r.id === rowId);
+  if (index !== -1) {
+    const removedRow = layout.rows.splice(index, 1)[0];
+    if (layout.rows.length > 0 && removedRow.people.length > 0) {
+      const target = layout.rows[Math.max(0, index - 1)];
+      target.people.push(...removedRow.people);
+      target.capacity = Math.max(target.capacity, target.people.length);
+    }
+  }
+  saveRosterLayout(false);
+  renderOrgChart();
+}
+
+function resetRosterLayoutForDivision(div = rosterDivision) {
+  if (confirm(`คุณต้องการรีเซ็ตผังทำเนียบของ "${div}" เป็นค่าเริ่มต้นตามลำดับชั้นยศใช่หรือไม่?`)) {
+    rosterSectionsOfDivision(div).forEach(sec => {
+      delete rosterLayout[rosterKey(sec, div)];
+    });
+    ensureAllRosterLayouts(div);
+    saveRosterLayout(true);
+    renderOrgChart();
+  }
+}
+
 function handleRosterDivisionChange(newDiv) {
   rosterDivision = newDiv;
   ensureAllRosterLayouts(rosterDivision);
   renderOrgChart();
 }
 
+/**
+ * รวมรายชื่อบุคลากรทั้งหมดที่อยู่ในผังของกองปัจจุบัน (ตามลำดับในผังจริง)
+ */
 function getAssignedRosterPersonnel(div = rosterDivision) {
   const list = [];
   const secs = rosterSectionsOfDivision(div);
@@ -778,11 +1400,20 @@ function printRosterChart() {
 }
 
 /**
- * เรนเดอร์หน้า "ผังทำเนียบกำลังพล" (User Mode: ดูได้อย่างเดียว + ตารางรายชื่อในผัง)
+ * เรนเดอร์หน้า "ผังทำเนียบกำลังพล" (Admin Mode: จัดรูปแบบ ย้ายแถว เพิ่มลด และดูตัวอย่าง)
  */
 function renderOrgChart() {
   const container = document.getElementById('orgchart-content');
   if (!container) return;
+
+  // จำตำแหน่งการเลื่อนก่อนวาดใหม่ (กันหน้าเด้งขึ้นบนสุดทุกครั้งที่ปรับผัง)
+  const prevWindowScrollX = window.scrollX;
+  const prevWindowScrollY = window.scrollY;
+  const prevEditor = document.getElementById('roster-editor-container');
+  const prevEditorScrollTop = prevEditor ? prevEditor.scrollTop : 0;
+  const prevMinHeight = container.style.minHeight;
+  // ล็อกความสูงชั่วคราว ไม่ให้หน้าสั้นลงตอน innerHTML ถูกล้าง แล้วเบราว์เซอร์ clamp scroll
+  container.style.minHeight = container.offsetHeight + 'px';
 
   initRosterState();
   const divisions = getAvailableRosterDivisions();
@@ -790,9 +1421,156 @@ function renderOrgChart() {
   const assignedList = getAssignedRosterPersonnel(rosterDivision);
   const secs = rosterSectionsOfDivision(rosterDivision);
 
+  // 1. Division Selector & Action Bar
   const divSelectOptions = divisions.map(d => `<option value="${escapeHtml(d)}" ${d === rosterDivision ? 'selected' : ''}>${escapeHtml(d)}</option>`).join('');
 
-  // 1. Directory Preview Sections
+  // 2. Editor Column (Interactive Rows)
+  const editorSectionsHtml = secs.map(sec => {
+    const targetRows = rosterRows(sec, rosterDivision);
+    const removedIds = rosterRemovedOf(sec, rosterDivision);
+    const secPeople = rosterPeopleInSection(sec, rosterDivision);
+
+    const rowsHtml = targetRows.map((row, index) => {
+      const cardsHtml = row.people.map((pid, personOrder) => {
+        const p = personnelList.find(item => String(item.id) === String(pid));
+        if (!p) return '';
+        const note = rosterSecondmentNote(p, rosterDivision);
+        const photo = p.avatar
+          ? `<img src="${escapeHtml(p.avatar)}" style="width:52px;height:65px;object-fit:cover;border-radius:0.375rem" class="bg-slate-700 flex-shrink-0" onerror="this.src='https://ded.mod.go.th/DED/media/unit-activities/logo-ded.png?ext=.png'">`
+          : `<div style="width:52px;height:65px;border-radius:0.375rem" class="bg-indigo-500/20 text-indigo-300 flex items-center justify-center flex-shrink-0"><i class="fa-solid fa-user"></i></div>`;
+        
+        return `
+          <div draggable="true" class="roster-person-card cursor-grab active:cursor-grabbing rounded-lg bg-slate-800 border border-slate-700 p-2 flex gap-2 items-center hover:border-amber-400/50 transition relative group" data-person-id="${escapeHtml(String(p.id))}">
+            ${photo}
+            <div class="min-w-0 flex-1">
+              <p class="text-xs font-semibold text-white truncate" title="${escapeHtml(p.rank || '')} ${escapeHtml(p.firstName || '')} ${escapeHtml(p.lastName || '')}">${escapeHtml(p.rank || '')} ${escapeHtml(p.firstName || '')} ${escapeHtml(p.lastName || '')}</p>
+              <p class="text-[10px] text-slate-400 truncate" title="${escapeHtml(p.position || 'ไม่ระบุตำแหน่ง')}">${escapeHtml(p.position || 'ไม่ระบุตำแหน่ง')}</p>
+              ${note ? `<p class="text-[9px] text-amber-400 truncate mt-0.5"><i class="fa-solid fa-right-left mr-0.5"></i>${escapeHtml(note)}</p>` : ''}
+              
+              <!-- Quick Directional Shift Buttons -->
+              <div class="flex items-center gap-1 mt-1.5 opacity-90 group-hover:opacity-100 transition">
+                <button type="button" onclick="event.stopPropagation(); moveRosterPersonInRow('${escapeHtml(sec)}', '${escapeHtml(row.id)}', '${escapeHtml(String(p.id))}', -1)" title="ขยับซ้าย (สลับตำแหน่งในแถว)" class="roster-btn-shift hover:text-white" ${personOrder === 0 ? 'disabled' : ''}>
+                  <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <button type="button" onclick="event.stopPropagation(); moveRosterPersonInRow('${escapeHtml(sec)}', '${escapeHtml(row.id)}', '${escapeHtml(String(p.id))}', 1)" title="ขยับขวา (สลับตำแหน่งในแถว)" class="roster-btn-shift hover:text-white" ${personOrder === row.people.length - 1 ? 'disabled' : ''}>
+                  <i class="fa-solid fa-chevron-right"></i>
+                </button>
+                <button type="button" onclick="event.stopPropagation(); moveRosterPersonRowShift('${escapeHtml(sec)}', '${escapeHtml(row.id)}', '${escapeHtml(String(p.id))}', -1)" title="ย้ายขึ้นแถวบน" class="roster-btn-shift hover:text-white" ${index === 0 ? 'disabled' : ''}>
+                  <i class="fa-solid fa-chevron-up"></i>
+                </button>
+                <button type="button" onclick="event.stopPropagation(); moveRosterPersonRowShift('${escapeHtml(sec)}', '${escapeHtml(row.id)}', '${escapeHtml(String(p.id))}', 1)" title="ย้ายลงแถวล่าง" class="roster-btn-shift hover:text-white">
+                  <i class="fa-solid fa-chevron-down"></i>
+                </button>
+              </div>
+            </div>
+            <button onclick="removeRosterPerson('${escapeHtml(sec)}', '${escapeHtml(String(p.id))}')" class="text-slate-500 hover:text-red-400 text-xs px-1.5 py-1 rounded hover:bg-slate-700/60 transition self-start" title="เอาออกจากผัง">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div class="roster-drop-row rounded-xl border border-slate-700/80 bg-slate-950/60 p-3" data-section="${escapeHtml(sec)}" data-row="${escapeHtml(row.id)}">
+          <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
+            <div class="flex items-center gap-1.5">
+              <span class="text-xs font-semibold text-indigo-300 flex items-center gap-1.5">
+                <i class="fa-solid fa-layer-group text-[10px]"></i> แถวที่ ${index + 1}
+                <span class="text-[11px] font-normal text-slate-400">(${row.people.length} / ${row.capacity} นาย)</span>
+              </span>
+              <button type="button" onclick="moveRosterRowOrder('${escapeHtml(sec)}', '${escapeHtml(row.id)}', -1)" title="เลื่อนแถวขึ้น" class="roster-btn-shift" ${index === 0 ? 'disabled' : ''}>
+                <i class="fa-solid fa-arrow-up"></i>
+              </button>
+              <button type="button" onclick="moveRosterRowOrder('${escapeHtml(sec)}', '${escapeHtml(row.id)}', 1)" title="เลื่อนแถวลง" class="roster-btn-shift" ${index === targetRows.length - 1 ? 'disabled' : ''}>
+                <i class="fa-solid fa-arrow-down"></i>
+              </button>
+              <button type="button" onclick="sortRosterRowByRank('${escapeHtml(sec)}', '${escapeHtml(row.id)}')" title="จัดเรียงคนในแถวนี้ตามชั้นยศ" class="px-1.5 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] flex items-center gap-1 transition">
+                <i class="fa-solid fa-arrow-down-short-wide"></i> เรียงยศ
+              </button>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <div class="flex items-center border border-slate-700 rounded-lg bg-slate-900 overflow-hidden">
+                <button type="button" onclick="adjustRosterRowCapacity('${escapeHtml(sec)}', '${escapeHtml(row.id)}', -1)" title="ลดความจุแถว" class="px-1.5 py-0.5 hover:bg-slate-800 text-slate-400 hover:text-white text-xs">
+                  <i class="fa-solid fa-minus text-[9px]"></i>
+                </button>
+                <span class="text-xs text-amber-300 font-mono px-1.5 font-semibold" title="ความจุแถว">${row.capacity}</span>
+                <button type="button" onclick="adjustRosterRowCapacity('${escapeHtml(sec)}', '${escapeHtml(row.id)}', 1)" title="เพิ่มความจุแถว" class="px-1.5 py-0.5 hover:bg-slate-800 text-slate-400 hover:text-white text-xs">
+                  <i class="fa-solid fa-plus text-[9px]"></i>
+                </button>
+              </div>
+              <button type="button" onclick="fitRosterRowCapacity('${escapeHtml(sec)}', '${escapeHtml(row.id)}')" title="ปรับความจุให้พอดีกับจำนวนคน" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[10px] transition">
+                พอดีคน
+              </button>
+              ${targetRows.length > 1 ? `
+                <button onclick="removeRosterRow('${escapeHtml(sec)}', '${escapeHtml(row.id)}')" class="text-xs text-red-400 hover:text-red-300 p-1 rounded hover:bg-red-950/40 transition" title="ลบแถวนี้">
+                  <i class="fa-solid fa-trash"></i>
+                </button>
+              ` : ''}
+            </div>
+          </div>
+          <div class="roster-drop-zone min-h-[85px] grid gap-2" style="grid-template-columns: repeat(${Math.max(1, row.capacity)}, minmax(0, 1fr))">
+            ${cardsHtml}
+            <div class="roster-empty-placeholder text-[11px] text-slate-600 border border-dashed border-slate-800 rounded-lg flex items-center justify-center p-2 text-center">
+              วางที่นี่
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const removedHtml = removedIds.length > 0 ? `
+      <div class="mt-3 rounded-xl border border-dashed border-red-500/30 bg-red-500/5 p-3">
+        <p class="text-xs font-semibold text-red-300 mb-2 flex items-center gap-1">
+          <i class="fa-solid fa-user-slash"></i> นำออกจากผัง (${removedIds.length} นาย)
+        </p>
+        <div class="grid gap-2 grid-cols-1 sm:grid-cols-2">
+          ${removedIds.map(pid => {
+            const p = personnelList.find(item => String(item.id) === String(pid));
+            if (!p) return '';
+            return `
+              <div class="flex items-center gap-2 rounded-lg bg-slate-800/80 border border-slate-700 p-2">
+                <div class="min-w-0 flex-1">
+                  <p class="text-xs font-semibold text-white truncate">${escapeHtml(p.rank || '')} ${escapeHtml(p.firstName || '')} ${escapeHtml(p.lastName || '')}</p>
+                  <p class="text-[10px] text-slate-400 truncate">${escapeHtml(p.position || 'ไม่ระบุตำแหน่ง')}</p>
+                </div>
+                <button onclick="restoreRosterPerson('${escapeHtml(sec)}', '${escapeHtml(String(p.id))}')" class="px-2 py-1 bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600/40 rounded text-xs transition flex items-center gap-1" title="นำกลับเข้าผัง">
+                  <i class="fa-solid fa-plus text-[10px]"></i> คืนผัง
+                </button>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    ` : '';
+
+    return `
+      <div class="rounded-xl border border-indigo-500/20 bg-indigo-950/10 p-4 space-y-3">
+        <div class="flex items-center justify-between flex-wrap gap-2 border-b border-indigo-500/15 pb-2">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-indigo-400"></span>
+            <h4 class="font-bold text-sm text-white">${rosterSectionLabel(sec)}</h4>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-indigo-900/40 text-indigo-300 border border-indigo-700/50">
+              ${secPeople.length} นาย
+            </span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="sortRosterSectionByRank('${escapeHtml(sec)}')" class="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-medium transition flex items-center gap-1" title="จัดเรียงทุกคนในแผนกนี้ตามชั้นยศ">
+              <i class="fa-solid fa-arrow-down-short-wide text-[10px]"></i> จัดตามยศทั้งแผนก
+            </button>
+            <button onclick="addRosterRow('${escapeHtml(sec)}')" class="px-2.5 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-400/30 text-xs font-medium transition flex items-center gap-1">
+              <i class="fa-solid fa-plus text-[10px]"></i> เพิ่มแถว
+            </button>
+          </div>
+        </div>
+        <div class="space-y-3">
+          ${rowsHtml}
+        </div>
+        ${removedHtml}
+      </div>
+    `;
+  }).join('');
+
+  // 3. Preview Column (Official Directory Presentation)
   const previewSectionsHtml = secs.map(sec => {
     const targetRows = rosterRows(sec, rosterDivision);
     const hasAssignedPeople = targetRows.some(r => r.people.length > 0);
@@ -805,19 +1583,19 @@ function renderOrgChart() {
         if (!p) return '';
         const note = rosterSecondmentNote(p, rosterDivision);
         const photo = p.avatar
-          ? `<img src="${escapeHtml(p.avatar)}" class="w-full h-full object-cover cursor-pointer" onclick="viewPersonnel('${escapeHtml(p.id)}')" onerror="this.src='https://ded.mod.go.th/DED/media/unit-activities/logo-ded.png?ext=.png'">`
-          : `<div class="w-full h-full flex items-center justify-center text-slate-500 text-3xl bg-slate-900 cursor-pointer" onclick="viewPersonnel('${escapeHtml(p.id)}')"><i class="fa-solid fa-user"></i></div>`;
+          ? `<img src="${escapeHtml(p.avatar)}" class="w-full h-full object-cover" onerror="this.src='https://ded.mod.go.th/DED/media/unit-activities/logo-ded.png?ext=.png'">`
+          : `<div class="w-full h-full flex items-center justify-center text-slate-500 text-3xl bg-slate-900"><i class="fa-solid fa-user"></i></div>`;
 
         return `
           <div class="roster-card text-center flex flex-col items-center max-w-[190px] mx-auto">
-            <div class="roster-photo-frame w-28 h-36 sm:w-36 sm:h-44 rounded-xl overflow-hidden bg-slate-800 relative mb-2">
+            <div class="roster-photo-frame w-28 h-36 sm:w-32 sm:h-40 rounded-xl overflow-hidden bg-slate-800 relative mb-2">
               ${photo}
             </div>
             <div class="w-full px-1">
-              <span class="text-xs sm:text-sm font-bold text-white block leading-tight truncate hover:text-amber-400 cursor-pointer" onclick="viewPersonnel('${escapeHtml(p.id)}')" title="${escapeHtml(p.rank || '')} ${escapeHtml(p.firstName || '')} ${escapeHtml(p.lastName || '')}">
+              <span class="text-xs font-bold text-white block leading-tight truncate hover:text-amber-400 cursor-pointer" onclick="viewPersonnel('${escapeHtml(p.id)}')" title="${escapeHtml(p.rank || '')} ${escapeHtml(p.firstName || '')} ${escapeHtml(p.lastName || '')}">
                 ${escapeHtml(p.rank || '')} ${escapeHtml(p.firstName || '')} ${escapeHtml(p.lastName || '')}
               </span>
-              <span class="text-[10px] sm:text-[11px] text-amber-300/90 block truncate mt-0.5" title="${escapeHtml(p.position || '')}">
+              <span class="text-[10px] text-amber-300/90 block truncate mt-0.5" title="${escapeHtml(p.position || '')}">
                 ${escapeHtml(p.position || '-')}
               </span>
               ${note ? `<span class="text-[9px] text-sky-300 bg-sky-950/60 border border-sky-800/60 rounded px-1.5 py-0.5 inline-block truncate mt-1 max-w-full"><i class="fa-solid fa-right-left mr-0.5"></i>${escapeHtml(note)}</span>` : ''}
@@ -827,30 +1605,47 @@ function renderOrgChart() {
       }).join('');
 
       return `
-        <div class="grid gap-4 sm:gap-6 justify-center items-start mb-8" style="grid-template-columns: repeat(${Math.max(1, row.people.length)}, minmax(0, 190px))">
+        <div class="grid gap-4 justify-center items-start mb-6" style="grid-template-columns: repeat(${Math.max(1, row.people.length)}, minmax(0, 180px))">
           ${cardsHtml}
         </div>
       `;
     }).join('');
 
     return `
-      <div class="border-t border-slate-800/80 pt-6 first:border-t-0 first:pt-0">
-        ${sec === UNSPECIFIED_SECTION ? '' : `<h4 class="text-center text-sm sm:text-base font-bold text-indigo-300 uppercase tracking-wider mb-6 flex items-center justify-center gap-3">
-          <span class="w-12 h-px bg-indigo-500/30"></span>
+      <div class="border-t border-slate-800/80 pt-5 first:border-t-0 first:pt-0">
+        ${sec === UNSPECIFIED_SECTION ? '' : `<h4 class="text-center text-sm font-bold text-indigo-300 uppercase tracking-wider mb-5 flex items-center justify-center gap-2">
+          <span class="w-8 h-px bg-indigo-500/30"></span>
           ${rosterSectionLabel(sec)}
-          <span class="w-12 h-px bg-indigo-500/30"></span>
+          <span class="w-8 h-px bg-indigo-500/30"></span>
         </h4>`}
         ${rowsPreviewHtml}
       </div>
     `;
   }).join('');
 
-  // 2. Bottom Table Rows
+  // 4. All Row Options for Bottom Table Row Selector
+  const allRowOptions = [];
+  secs.forEach(sec => {
+    const targetRows = rosterRows(sec, rosterDivision);
+    targetRows.forEach((r, rIndex) => {
+      allRowOptions.push({
+        value: `${sec}|${r.id}`,
+        label: `[${rosterSectionLabel(sec)}] แถวที่ ${rIndex + 1}`
+      });
+    });
+  });
+
+  // 5. Bottom Table Rows (Assigned Personnel in Chart)
   const bottomTableRowsHtml = assignedList.map(item => {
     const p = item.person;
     const photo = p.avatar
       ? `<img src="${escapeHtml(p.avatar)}" class="w-9 h-11 object-cover rounded bg-slate-800 border border-slate-700" onerror="this.src='https://ded.mod.go.th/DED/media/unit-activities/logo-ded.png?ext=.png'">`
       : `<div class="w-9 h-11 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-500 text-xs"><i class="fa-solid fa-user"></i></div>`;
+    
+    const rowSelectOptions = allRowOptions.map(opt => {
+      const isSelected = opt.value === `${item.section}|${item.rowId}`;
+      return `<option value="${escapeHtml(opt.value)}" ${isSelected ? 'selected' : ''}>${escapeHtml(opt.label)}</option>`;
+    }).join('');
 
     return `
       <tr class="hover:bg-slate-800/40 transition">
@@ -865,14 +1660,17 @@ function renderOrgChart() {
           <div class="font-semibold text-sm text-white hover:text-amber-400 cursor-pointer" onclick="viewPersonnel('${escapeHtml(p.id)}')">
             ${escapeHtml(p.rank || '')} ${escapeHtml(p.firstName || '')} ${escapeHtml(p.lastName || '')}
           </div>
-          <div class="text-[11px] text-slate-500">${escapeHtml(p.serviceId || '')}</div>
+          <div class="text-[11px] text-slate-500 flex items-center gap-1.5 font-mono">
+            <span class="text-amber-400 font-semibold" title="รหัสระบบ / ID">ID: ${formatPersonnelId(p.id)}</span>
+            ${p.serviceId ? `<span>• ${escapeHtml(p.serviceId)}</span>` : ''}
+          </div>
         </td>
         <td class="py-3 px-3">
           <div class="text-xs text-slate-300 font-medium">${escapeHtml(p.position || '-')}</div>
           ${item.note ? `<div class="text-[10px] text-amber-400 mt-0.5"><i class="fa-solid fa-right-left mr-0.5"></i>${escapeHtml(item.note)}</div>` : ''}
         </td>
         <td class="py-3 px-3 text-center">
-          <span class="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-amber-300 border border-slate-700 font-mono font-bold">
+          <span class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-amber-300 border border-slate-700 font-mono font-bold">
             แถว ${item.rowIndex}
           </span>
         </td>
@@ -880,18 +1678,24 @@ function renderOrgChart() {
           ลำดับที่ ${item.orderInRow}
         </td>
         <td class="py-3 px-3 text-center">
-          <button onclick="viewPersonnel('${escapeHtml(p.id)}')" class="text-xs py-1 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 transition flex items-center gap-1 mx-auto">
-            <i class="fa-solid fa-id-card"></i> ดูประวัติ
-          </button>
+          <div class="flex items-center justify-center gap-2">
+            <select onchange="const parts = this.value.split('|'); moveRosterPerson('${escapeHtml(p.id)}', parts[0], parts[1]);" class="text-xs py-1 px-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-amber-500 max-w-[180px]">
+              ${rowSelectOptions}
+            </select>
+            <button onclick="removeRosterPerson('${escapeHtml(item.section)}', '${escapeHtml(p.id)}')" class="text-slate-400 hover:text-red-400 text-xs p-1.5 rounded hover:bg-slate-800 transition" title="เอาออกจากผัง">
+              <i class="fa-solid fa-user-xmark"></i>
+            </button>
+          </div>
         </td>
       </tr>
     `;
   }).join('');
 
+  // 6. Complete Container HTML
   container.innerHTML = `
-    <!-- Top Control Bar -->
+    <!-- Roster Header Control Panel -->
     <div class="glass-panel rounded-2xl p-5 border border-slate-800 space-y-4">
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <div class="flex items-center gap-2">
             <span class="text-xs font-semibold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 uppercase tracking-wider flex items-center gap-1">
@@ -901,11 +1705,23 @@ function renderOrgChart() {
           </div>
           <h2 class="text-xl font-bold text-white mt-1 flex items-center gap-2">
             ${escapeHtml(rosterDivision)}
-            <span class="text-xs font-normal text-slate-400">(${divPeople.length} นายในสังกัด • ในผัง ${assignedList.length} นาย)</span>
+            <span class="text-xs font-normal text-slate-400">(${divPeople.length} นายในสังกัด • อยู่ในผัง ${assignedList.length} นาย)</span>
           </h2>
         </div>
 
-        <div class="flex items-center gap-3">
+        <div class="flex flex-wrap items-center gap-2.5 roster-admin-controls">
+          <div class="relative min-w-[170px] max-w-[220px]">
+            <input
+              type="text"
+              id="roster-search-input"
+              value="${escapeHtml(rosterSearchQuery)}"
+              oninput="handleRosterSearch(this.value)"
+              placeholder="🔍 ค้นหาชื่อในผัง..."
+              class="py-1.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 w-full"
+            >
+            ${rosterSearchQuery ? `<button onclick="handleRosterSearch(''); const el = document.getElementById('roster-search-input'); if(el) el.value='';" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-xs"><i class="fa-solid fa-xmark"></i></button>` : ''}
+          </div>
+
           <div class="flex items-center gap-1.5">
             <label class="text-xs text-slate-400 whitespace-nowrap">เลือกกอง:</label>
             <select id="roster-division-select" onchange="handleRosterDivisionChange(this.value)" class="py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-sm text-white font-medium focus:outline-none focus:border-amber-500">
@@ -913,7 +1729,17 @@ function renderOrgChart() {
             </select>
           </div>
 
-          <button onclick="printRosterChart()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 border border-slate-700 text-xs font-semibold transition flex items-center gap-1.5">
+          <button onclick="saveRosterLayout(true)" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-lg shadow-emerald-700/30 border border-emerald-400/30 transition flex items-center gap-1.5">
+            <i class="fa-solid fa-floppy-disk"></i>
+            <span>บันทึกผัง</span>
+          </button>
+
+          <button onclick="resetRosterLayoutForDivision()" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-medium transition flex items-center gap-1.5" title="จัดเรียงใหม่ตามลำดับชั้นยศ">
+            <i class="fa-solid fa-rotate-left"></i>
+            <span class="hidden sm:inline">รีเซ็ตตามยศ</span>
+          </button>
+
+          <button onclick="printRosterChart()" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 border border-slate-700 text-xs font-medium transition flex items-center gap-1.5" title="พิมพ์ผังทำเนียบ">
             <i class="fa-solid fa-print"></i>
             <span>พิมพ์ผัง</span>
           </button>
@@ -921,23 +1747,61 @@ function renderOrgChart() {
       </div>
     </div>
 
-    <!-- Official Executive Org Chart Display -->
-    <div class="glass-panel rounded-2xl p-6 sm:p-8 border border-slate-800 space-y-6 roster-print-container">
-      <!-- Official Header -->
-      <div class="text-center mb-10">
-        <div class="w-16 h-16 mx-auto mb-3 rounded-2xl bg-gradient-to-br from-amber-500 via-amber-600 to-amber-800 p-0.5 shadow-xl shadow-amber-500/30 flex items-center justify-center">
-          <div class="w-full h-full bg-slate-900 rounded-[14px] flex items-center justify-center">
-            <i class="fa-solid fa-bolt text-2xl text-amber-400"></i>
+    <!-- Main 2-Column Work Area: Editor & Live Preview -->
+    <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+      
+      <!-- Left Column: Row Configuration Editor (5 cols) -->
+      <div class="xl:col-span-5 glass-panel rounded-2xl p-5 border border-slate-800 space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div>
+            <h3 class="font-bold text-white text-sm flex items-center gap-2">
+              <i class="fa-solid fa-sliders text-indigo-400"></i> พื้นที่จัดแถว & จัดการผัง
+            </h3>
+            <p class="text-xs text-slate-400 mt-0.5">ลากการ์ดกำลังพลสลับแถว หรือปรับความจุของแต่ละแถว</p>
           </div>
+          <span class="text-xs px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 font-semibold">
+            Admin Mode
+          </span>
         </div>
-        <div class="text-xs font-semibold text-amber-400 tracking-widest uppercase">กรมการพลังงานทหาร</div>
-        <h2 class="text-xl sm:text-2xl font-extrabold text-white mt-1 tracking-tight">ทำเนียบกำลังพล</h2>
-        <p class="text-sm font-semibold text-slate-300 mt-1">${escapeHtml(rosterDivision)}</p>
+
+        <div id="roster-editor-container" class="space-y-4 max-h-[800px] overflow-y-auto pr-1">
+          ${editorSectionsHtml || '<p class="text-center py-8 text-slate-500 text-sm">ไม่พบแผนกในกองนี้</p>'}
+        </div>
       </div>
 
-      <div class="space-y-8">
-        ${previewSectionsHtml || '<p class="text-center py-16 text-slate-500 text-sm">ยังไม่มีกำลังพลที่ถูกจัดวางในผังของกองนี้</p>'}
+      <!-- Right Column: Live Official Preview (7 cols) -->
+      <div class="xl:col-span-7 glass-panel rounded-2xl p-5 border border-slate-800 space-y-4 roster-print-container">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div>
+            <h3 class="font-bold text-white text-sm flex items-center gap-2">
+              <i class="fa-solid fa-eye text-sky-400"></i> ตัวอย่างหน้าทำเนียบจริง (Preview)
+            </h3>
+            <p class="text-xs text-slate-400 mt-0.5">การแสดงผลจริงตามตำแหน่งและแถวที่จัดไว้</p>
+          </div>
+          <span class="text-xs px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30 font-semibold">
+            Executive View
+          </span>
+        </div>
+
+        <div class="rounded-xl bg-slate-950/70 border border-slate-800/80 p-6 min-h-[500px] overflow-x-auto">
+          <!-- Emblem / Department Header in Preview -->
+          <div class="text-center mb-8">
+            <div class="w-14 h-14 mx-auto mb-2 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-700 p-0.5 shadow-lg shadow-amber-500/20 flex items-center justify-center">
+              <div class="w-full h-full bg-slate-900 rounded-[14px] flex items-center justify-center">
+                <i class="fa-solid fa-bolt text-2xl text-amber-400"></i>
+              </div>
+            </div>
+            <div class="text-xs font-semibold text-amber-400 tracking-widest uppercase">กรมการพลังงานทหาร</div>
+            <h2 class="text-lg sm:text-xl font-extrabold text-white mt-0.5 tracking-tight">ทำเนียบกำลังพล</h2>
+            <p class="text-sm font-semibold text-slate-300 mt-1">${escapeHtml(rosterDivision)}</p>
+          </div>
+
+          <div class="space-y-6">
+            ${previewSectionsHtml || '<p class="text-center py-12 text-slate-500 text-sm">ยังไม่มีกำลังพลที่จัดวางในผัง</p>'}
+          </div>
+        </div>
       </div>
+
     </div>
 
     <!-- Bottom Section: Complete Personnel Table in Roster -->
@@ -967,7 +1831,7 @@ function renderOrgChart() {
               <th class="py-3 px-3">ตำแหน่งหน้าที่</th>
               <th class="py-3 px-3 text-center">แถวในผัง</th>
               <th class="py-3 px-3 text-center">ลำดับในแถว</th>
-              <th class="py-3 px-3 text-center">ดูข้อมูล</th>
+              <th class="py-3 px-3 text-center">ย้ายแถว / การจัดการ</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-800/60">
@@ -977,8 +1841,110 @@ function renderOrgChart() {
       </div>
     </div>
   `;
+
+  attachRosterDragEvents();
+
+  // คืนตำแหน่งการเลื่อนเดิม
+  const newEditor = document.getElementById('roster-editor-container');
+  if (newEditor) newEditor.scrollTop = prevEditorScrollTop;
+  window.scrollTo(prevWindowScrollX, prevWindowScrollY);
+  requestAnimationFrame(() => {
+    window.scrollTo(prevWindowScrollX, prevWindowScrollY);
+    if (newEditor) newEditor.scrollTop = prevEditorScrollTop;
+    container.style.minHeight = prevMinHeight;
+  });
 }
 
+/**
+ * ผูก Event Drag-and-Drop & Capacity Input
+ */
+function attachRosterDragEvents() {
+  document.querySelectorAll('.roster-person-card').forEach(el => {
+    el.addEventListener('dragstart', (e) => {
+      rosterDragPersonId = el.dataset.personId;
+      el.classList.add('opacity-40');
+      e.dataTransfer.setData('text/plain', rosterDragPersonId);
+    });
+    el.addEventListener('dragend', () => {
+      el.classList.remove('opacity-40');
+      document.querySelectorAll('.roster-drop-target-before, .roster-drop-target-after').forEach(c => {
+        c.classList.remove('roster-drop-target-before', 'roster-drop-target-after');
+      });
+    });
+
+    // ลากมาวางเหนือการ์ดบุคคลอื่น เพื่อแทรกตำแหน่งหน้าหรือหลัง
+    el.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!rosterDragPersonId || rosterDragPersonId === el.dataset.personId) return;
+      const rect = el.getBoundingClientRect();
+      const midX = rect.left + rect.width / 2;
+      if (e.clientX < midX) {
+        el.classList.add('roster-drop-target-before');
+        el.classList.remove('roster-drop-target-after');
+      } else {
+        el.classList.add('roster-drop-target-after');
+        el.classList.remove('roster-drop-target-before');
+      }
+    });
+
+    el.addEventListener('dragleave', () => {
+      el.classList.remove('roster-drop-target-before', 'roster-drop-target-after');
+    });
+
+    el.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const isBefore = el.classList.contains('roster-drop-target-before');
+      el.classList.remove('roster-drop-target-before', 'roster-drop-target-after');
+      const targetPersonId = el.dataset.personId;
+      const rowEl = el.closest('.roster-drop-row');
+      if (rowEl && rosterDragPersonId && targetPersonId && rosterDragPersonId !== targetPersonId) {
+        insertRosterPersonAt(rosterDragPersonId, rowEl.dataset.section, rowEl.dataset.row, targetPersonId, isBefore);
+      }
+    });
+  });
+
+  document.querySelectorAll('.roster-drop-zone').forEach(el => {
+    el.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      el.classList.add('roster-drop-active');
+    });
+    el.addEventListener('dragleave', () => {
+      el.classList.remove('roster-drop-active');
+    });
+    el.addEventListener('drop', (e) => {
+      e.preventDefault();
+      el.classList.remove('roster-drop-active');
+      const rowEl = el.closest('.roster-drop-row');
+      if (rowEl && rosterDragPersonId) {
+        moveRosterPerson(rosterDragPersonId, rowEl.dataset.section, rowEl.dataset.row);
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-capacity-input]').forEach(el => {
+    el.addEventListener('change', () => {
+      const rowId = el.dataset.capacityInput;
+      const section = el.dataset.section;
+      const row = rosterRows(section, rosterDivision).find(r => r.id === rowId);
+      if (row) {
+        row.capacity = Math.max(Number(el.value) || 1, row.people.length);
+        saveRosterLayout(false);
+        renderOrgChart();
+      }
+    });
+  });
+
+  // ถ้ามีการค้นหาค้างอยู่ ให้ใส่ไฮไลต์การ์ดที่ค้นหาทันที
+  if (rosterSearchQuery) {
+    applyRosterSearchHighlight();
+  }
+}
+
+/**
+ * คำนวณและเรนเดอร์สถิติรวม (KPIs) และตัวเลขบนแท็บ
+ */
 function renderKPIs() {
   const total = personnelList.length;
   const armyCount = personnelList.filter(p => p.branch === 'army').length;
@@ -996,6 +1962,7 @@ function renderKPIs() {
   setText('stat-employee', empCount);
   setText('stat-generals', generalCount);
 
+  // Tab Badge counts
   setText('badge-count-all', total);
   setText('badge-count-army', armyCount);
   setText('badge-count-navy', navyCount);
@@ -1005,7 +1972,7 @@ function renderKPIs() {
 }
 
 /**
- * เรนเดอร์การ์ดกำลังพล (Grid View) — โหมดดูอย่างเดียว (ไม่มีปุ่มแก้ไข/ลบ)
+ * เรนเดอร์การ์ดกำลังพล (Grid View)
  */
 function renderGrid(list) {
   const grid = document.getElementById('personnel-grid');
@@ -1018,7 +1985,8 @@ function renderGrid(list) {
 
     return `
       <div class="branch-card card-${p.branch} rounded-2xl p-5 relative overflow-hidden flex flex-col justify-between group">
-
+        
+        <!-- Top Branch & Tier Ribbon -->
         <div class="flex items-center justify-between gap-2 mb-3">
           <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${branch.badgeClass}">
             <i class="fa-solid ${branch.icon} text-[11px]"></i>
@@ -1031,12 +1999,15 @@ function renderGrid(list) {
           </span>
         </div>
 
+        <!-- Personnel Profile Header -->
         <div class="flex items-start gap-3.5">
+          <!-- Avatar Frame with Branch Ring -->
           <div class="avatar-frame avatar-frame-${p.branch} flex-shrink-0 w-16 h-16 relative shadow-md">
             <img src="${resolveAvatarUrl(p)}" alt="${p.rank} ${p.firstName}" class="w-full h-full object-cover" onerror="this.src='${getDefaultAvatarForBranch(p.branch)}'">
             <span class="absolute bottom-0 right-0 status-indicator ${statusInfo.className} ring-2 ring-slate-900" title="${statusInfo.label}"></span>
           </div>
 
+          <!-- Name & Rank -->
           <div class="flex-1 min-w-0">
             <div class="text-xs font-semibold text-amber-400 tracking-wide">${escapeHtml(p.rank)}</div>
             <h3 class="text-base font-bold text-white truncate group-hover:text-amber-300 transition">
@@ -1046,29 +2017,44 @@ function renderGrid(list) {
               <i class="fa-solid fa-briefcase text-[10px] text-slate-500 flex-shrink-0"></i>
               <span class="truncate">${escapeHtml(p.position) || 'ยังไม่ระบุตำแหน่ง'}</span>
             </p>
+            ${p.secondedTo ? `
+            <p class="text-[10px] text-amber-400 truncate mt-0.5 flex items-center gap-1.5" title="ช่วยราชการ ${escapeHtml(formatSecondedTo(p))}">
+              <i class="fa-solid fa-right-left text-[9px] flex-shrink-0"></i>
+              <span class="truncate">ช่วยราชการ ${escapeHtml(formatSecondedTo(p))}</span>
+            </p>` : ''}
           </div>
         </div>
 
+        <!-- Department / Division in Defense Energy Dept -->
         <div class="mt-4 pt-3 border-t border-slate-800/80 space-y-1.5 text-xs text-slate-300">
           <div class="flex items-center gap-2 text-slate-400">
             <i class="fa-solid fa-sitemap text-[11px] text-amber-500/80 w-4 flex-shrink-0"></i>
             <span class="truncate font-medium text-slate-200" title="${escapeHtml(p.department)}">${escapeHtml(p.department)}</span>
           </div>
           <div class="flex items-center justify-between text-[11px] text-slate-400">
-            <span class="font-mono text-slate-400 flex items-center gap-1.5">
-              <i class="fa-solid fa-id-badge text-slate-500 w-4"></i>
-              ${escapeHtml(p.serviceId)}
+            <span class="font-mono text-amber-400 font-semibold flex items-center gap-1.5" title="รหัสระบบ / รหัส ID">
+              <i class="fa-solid fa-hashtag text-amber-500/80 text-[10px]"></i>
+              ID: ${formatPersonnelId(p.id)}
             </span>
-            <span>ปีบรรจุ: ${p.joinedYear || '-'}</span>
+            <span class="font-mono text-slate-400" title="เลขประจำตัว">${p.serviceId ? escapeHtml(p.serviceId) : (p.joinedYear ? `ปีบรรจุ: ${p.joinedYear}` : '')}</span>
           </div>
         </div>
 
-        <!-- Action: View only (no edit/delete for User page) -->
-        <div class="mt-4 pt-3 border-t border-slate-800/80">
-          <button onclick="viewPersonnel('${p.id}')" class="w-full py-1.5 px-2.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition flex items-center justify-center gap-1.5">
+        <!-- Action Buttons -->
+        <div class="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
+          <button onclick="viewPersonnel('${p.id}')" class="flex-1 py-1.5 px-2.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition flex items-center justify-center gap-1.5">
             <i class="fa-solid fa-id-card text-amber-400"></i>
             <span>ดูประวัติ</span>
           </button>
+          
+          <div class="flex items-center gap-1">
+            <button onclick="editPersonnel('${p.id}')" class="p-1.5 rounded-lg bg-slate-800/60 hover:bg-blue-600/30 text-blue-400 hover:text-blue-300 border border-slate-700/60 transition" title="แก้ไขข้อมูล">
+              <i class="fa-solid fa-pen-to-square text-xs"></i>
+            </button>
+            <button onclick="deletePersonnelPrompt('${p.id}')" class="p-1.5 rounded-lg bg-slate-800/60 hover:bg-red-600/30 text-red-400 hover:text-red-300 border border-slate-700/60 transition" title="ลบข้อมูล">
+              <i class="fa-solid fa-trash-can text-xs"></i>
+            </button>
+          </div>
         </div>
 
       </div>
@@ -1077,7 +2063,7 @@ function renderGrid(list) {
 }
 
 /**
- * เรนเดอร์ข้อมูลในรูปแบบตาราง (Table View) — โหมดดูอย่างเดียว
+ * เรนเดอร์ข้อมูลในรูปแบบตาราง (Table View)
  */
 function renderTable(list) {
   const tbody = document.getElementById('personnel-table-body');
@@ -1090,6 +2076,7 @@ function renderTable(list) {
 
     return `
       <tr class="hover:bg-slate-900/60 transition">
+        <!-- Personnel Info -->
         <td class="py-3 px-4">
           <div class="flex items-center gap-3">
             <div class="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 border border-slate-700">
@@ -1097,11 +2084,15 @@ function renderTable(list) {
             </div>
             <div>
               <div class="font-bold text-white">${escapeHtml(p.firstName)} ${escapeHtml(p.lastName)}</div>
-              <div class="text-xs font-mono text-slate-400">${escapeHtml(p.serviceId)}</div>
+              <div class="text-xs font-mono text-slate-400 flex items-center gap-2">
+                <span class="text-amber-400 font-semibold" title="รหัสระบบ / รหัส ID">ID: ${formatPersonnelId(p.id)}</span>
+                ${p.serviceId ? `<span>• ${escapeHtml(p.serviceId)}</span>` : ''}
+              </div>
             </div>
           </div>
         </td>
 
+        <!-- Rank & Tier -->
         <td class="py-3 px-3">
           <div class="font-semibold text-amber-400 text-xs">${escapeHtml(p.rank)}</div>
           <span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded ${tierBadge.className} mt-1">
@@ -1109,6 +2100,7 @@ function renderTable(list) {
           </span>
         </td>
 
+        <!-- Branch -->
         <td class="py-3 px-3">
           <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${branch.badgeClass}">
             <i class="fa-solid ${branch.icon} text-[10px]"></i>
@@ -1116,14 +2108,17 @@ function renderTable(list) {
           </span>
         </td>
 
+        <!-- Department -->
         <td class="py-3 px-4 text-xs text-slate-300">
           <div class="max-w-[240px] truncate font-medium text-slate-200" title="${escapeHtml(p.department)}">${escapeHtml(p.department)}</div>
         </td>
 
+        <!-- Position -->
         <td class="py-3 px-4 text-xs text-slate-300">
           <div class="max-w-[180px] truncate" title="${escapeHtml(p.position)}">${escapeHtml(p.position)}</div>
         </td>
 
+        <!-- Status -->
         <td class="py-3 px-3 text-xs">
           <span class="inline-flex items-center gap-1.5">
             <span class="status-indicator ${statusInfo.className}"></span>
@@ -1131,31 +2126,49 @@ function renderTable(list) {
           </span>
         </td>
 
+        <!-- Actions -->
         <td class="py-3 px-4 text-center">
-          <button onclick="viewPersonnel('${p.id}')" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 transition" title="ดูประวัติ">
-            <i class="fa-solid fa-id-card text-xs"></i>
-          </button>
+          <div class="flex items-center justify-center gap-1.5">
+            <button onclick="viewPersonnel('${p.id}')" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 transition" title="ดูประวัติ">
+              <i class="fa-solid fa-id-card text-xs"></i>
+            </button>
+            <button onclick="editPersonnel('${p.id}')" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-blue-400 hover:text-blue-300 transition" title="แก้ไข">
+              <i class="fa-solid fa-pen-to-square text-xs"></i>
+            </button>
+            <button onclick="deletePersonnelPrompt('${p.id}')" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-red-400 hover:text-red-300 transition" title="ลบ">
+              <i class="fa-solid fa-trash-can text-xs"></i>
+            </button>
+          </div>
         </td>
       </tr>
     `;
   }).join('');
 }
 
-// ================= ADD-ONLY MODAL HANDLERS =================
+// ================= CRUD MODAL HANDLERS =================
 
 /**
- * เปิด Modal เพิ่มกำลังพลใหม่ (User ทำได้แค่เพิ่มเท่านั้น ไม่มีโหมดแก้ไข)
+ * เปิด Modal เพิ่มกำลังพลใหม่
  */
 function openAddModal() {
   document.getElementById('personnel-form').reset();
-
+  const nextId = generateNextPersonnelId();
+  document.getElementById('form-id').value = nextId;
+  const origEl = document.getElementById('form-original-id');
+  if (origEl) origEl.value = '';
+  document.getElementById('form-modal-title').textContent = 'เพิ่มข้อมูลกำลังพลใหม่';
+  document.getElementById('form-modal-icon').innerHTML = '<i class="fa-solid fa-user-plus text-emerald-400"></i>';
+  
+  // กำหนดรูปเริ่มต้น
   const defaultBranch = 'army';
   document.getElementById('form-branch').value = defaultBranch;
   document.getElementById('form-avatar-preview').src = DEFAULT_AVATARS.army_1;
   document.getElementById('form-avatar-url').value = '';
 
+  // เติมตัวเลือกยศ
   updateFormRanks(defaultBranch);
 
+  // ตั้งค่ากองและแผนกเริ่มต้น
   if (ENERGY_DEPT_STRUCTURE.length > 0) {
     document.getElementById('form-division').value = ENERGY_DEPT_STRUCTURE[0].division;
     handleFormDivisionChange(ENERGY_DEPT_STRUCTURE[0].division);
@@ -1164,6 +2177,78 @@ function openAddModal() {
   // เลขประจำตัวและปีที่เริ่มรับราชการ: ให้ผู้ใช้กรอกเองทั้งหมด ไม่เติมค่าอัตโนมัติ
   document.getElementById('form-service-id').value = '';
   document.getElementById('form-joined-year').value = '';
+
+  // ไม่ได้ช่วยราชการโดยค่าเริ่มต้น
+  const secondedSelect = document.getElementById('form-seconded-to');
+  if (secondedSelect) secondedSelect.value = '';
+  handleSecondedToChange('');
+
+  const modal = document.getElementById('form-modal');
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+}
+
+/**
+ * เปิด Modal แก้ไขข้อมูลกำลังพล
+ */
+function editPersonnel(id) {
+  const p = personnelList.find(item => String(item.id) === String(id));
+  if (!p) return;
+
+  document.getElementById('form-id').value = formatPersonnelId(p.id);
+  const origEl = document.getElementById('form-original-id');
+  if (origEl) origEl.value = formatPersonnelId(p.id);
+  document.getElementById('form-modal-title').textContent = `แก้ไขข้อมูล: ${p.rank} ${p.firstName}`;
+  document.getElementById('form-modal-icon').innerHTML = '<i class="fa-solid fa-pen-to-square text-blue-400"></i>';
+
+  document.getElementById('form-branch').value = p.branch;
+  updateFormRanks(p.branch, p.rank);
+
+  document.getElementById('form-service-id').value = p.serviceId || '';
+  document.getElementById('form-first-name').value = p.firstName || '';
+  document.getElementById('form-last-name').value = p.lastName || '';
+  document.getElementById('form-status').value = p.status || 'active';
+  document.getElementById('form-joined-year').value = p.joinedYear || '';
+  document.getElementById('form-phone').value = p.phone || '';
+  document.getElementById('form-email').value = p.email || '';
+  document.getElementById('form-notes').value = p.notes || '';
+
+  // ตรวจสอบและแยก Division & Section จาก p.department
+  const rawDept = p.department || '';
+  let matchedDiv = ENERGY_DEPT_STRUCTURE[0].division;
+  let matchedSec = '';
+
+  for (const item of ENERGY_DEPT_STRUCTURE) {
+    if (rawDept.includes(item.division)) {
+      matchedDiv = item.division;
+      for (const sec of item.sections) {
+        if (rawDept.includes(sec)) {
+          matchedSec = sec;
+          break;
+        }
+      }
+      break;
+    }
+  }
+
+  const divSelect = document.getElementById('form-division');
+  if (divSelect) {
+    divSelect.value = matchedDiv;
+    handleFormDivisionChange(matchedDiv, matchedSec);
+  }
+
+  // ตั้งค่าตำแหน่งเดิมลงในดรอปดาวน์ (หรือ "อื่นๆ" ถ้าไม่ตรงกับรายการมาตรฐาน) - ต้องทำหลังสร้างตัวเลือกตำแหน่งแล้วเท่านั้น
+  // ไม่มีการแก้ไขค่าตำแหน่งเดิมของกำลังพล
+  setFormPositionValue(p.position || '');
+
+  // กองที่ไปช่วยราชการ (ถ้ามี)
+  const secondedSelect = document.getElementById('form-seconded-to');
+  if (secondedSelect) secondedSelect.value = p.secondedTo || '';
+  handleSecondedToChange(p.secondedTo || '', p.secondedToSection || '');
+
+  // รูปภาพ
+  document.getElementById('form-avatar-preview').src = resolveAvatarUrl(p);
+  document.getElementById('form-avatar-url').value = p.avatar && p.avatar.startsWith('http') ? convertToDirectImageUrl(p.avatar) : '';
 
   const modal = document.getElementById('form-modal');
   modal.classList.remove('hidden');
@@ -1176,21 +2261,34 @@ function closeFormModal() {
   modal.classList.remove('flex');
 }
 
+/**
+ * จัดการเมื่อเปลี่ยนเหล่าทัพใน Form
+ */
 function handleFormBranchChange(branch) {
   let defaultAv = DEFAULT_AVATARS.army_1;
 
-  if (branch === 'navy') { defaultAv = DEFAULT_AVATARS.navy_1; }
-  else if (branch === 'airforce') { defaultAv = DEFAULT_AVATARS.air_1; }
-  else if (branch === 'civil') { defaultAv = DEFAULT_AVATARS.civil_1; }
-  else if (branch === 'employee') { defaultAv = DEFAULT_AVATARS.emp_1; }
+  if (branch === 'navy') {
+    defaultAv = DEFAULT_AVATARS.navy_1;
+  } else if (branch === 'airforce') {
+    defaultAv = DEFAULT_AVATARS.air_1;
+  } else if (branch === 'civil') {
+    defaultAv = DEFAULT_AVATARS.civil_1;
+  } else if (branch === 'employee') {
+    defaultAv = DEFAULT_AVATARS.emp_1;
+  }
 
-  document.getElementById('form-avatar-preview').src = defaultAv;
+  if (!document.getElementById('form-id').value) {
+    document.getElementById('form-avatar-preview').src = defaultAv;
+  }
 
   // เลขประจำตัวกรอกเองทั้งหมด (ตัวเลข 10 หลัก ไม่มีคำนำหน้าเหล่าทัพ) จึงไม่ต้องปรับค่าตามเหล่าทัพที่เลือก
 
   updateFormRanks(branch);
 }
 
+/**
+ * เติมตัวเลือกยศใน Modal Form
+ */
 function updateFormRanks(branch, selectedRank = null) {
   const rankSelect = document.getElementById('form-rank');
   const ranks = getRanksByBranch(branch);
@@ -1201,19 +2299,23 @@ function updateFormRanks(branch, selectedRank = null) {
       return `<option value="${escapeHtml(r.rank)}" data-tier="${r.tier}" ${isSel ? 'selected' : ''}>${r.rank} (${r.titleEn}) - Tier ${r.tier}</option>`;
     }).join('');
 
+    // Trigger tier update
     const currentRank = rankSelect.value;
     handleFormRankChange(currentRank);
   }
 }
 
+/**
+ * เมื่อเลือกยศใน Form -> อัปเดต Tier Preview อัตโนมัติ
+ */
 function handleFormRankChange(rankName) {
   const branch = document.getElementById('form-branch').value;
   const tier = getRankTier(rankName, branch);
-
+  
   document.getElementById('form-rank-tier').value = tier;
   const badgeEl = document.getElementById('form-tier-badge');
   const descEl = document.getElementById('form-tier-desc');
-
+  
   if (badgeEl) badgeEl.textContent = tier;
   if (descEl) {
     if (branch === 'employee') {
@@ -1271,14 +2373,6 @@ function handleImageUpload(event) {
   reader.readAsDataURL(file);
 }
 
-function handleImageUrlInput(url) {
-  if (url && url.trim().length > 5) {
-    const directUrl = convertToDirectImageUrl(url);
-    document.getElementById('form-avatar-preview').src = directUrl;
-    document.getElementById('form-avatar-url').value = directUrl;
-  }
-}
-
 /**
  * ดาวน์โหลดรูปภาพจาก URL ใดๆ มาเก็บเป็นไฟล์ที่เครื่องผู้ใช้
  * ถ้าโหลดแบบ blob ไม่สำเร็จ (เช่นติด CORS) จะเปิดรูปในแท็บใหม่แทน
@@ -1310,6 +2404,7 @@ async function downloadImageFromUrl(url, filename) {
     a.remove();
     URL.revokeObjectURL(blobUrl);
   } catch (err) {
+    // ติด CORS หรือโหลดไม่ได้ — เปิดรูปในแท็บใหม่ให้ผู้ใช้กดบันทึกเอง
     window.open(url, '_blank');
     showToast('ไม่สามารถดาวน์โหลดอัตโนมัติได้ เปิดรูปในแท็บใหม่แทน คลิกขวาแล้วเลือก "บันทึกรูปภาพเป็น..."', 'info');
   }
@@ -1329,24 +2424,166 @@ function downloadCurrentViewAvatar() {
 }
 
 /**
- * ดาวน์โหลดรูปที่แสดงอยู่ในช่อง preview ของฟอร์มเพิ่มข้อมูล (ไฟล์ที่เพิ่งเลือก/วางลิงก์ไว้)
+ * ดาวน์โหลดรูปที่แสดงอยู่ในช่อง preview ของฟอร์มเพิ่ม/แก้ไขข้อมูล (ไฟล์ที่เพิ่งเลือก/บันทึกไว้)
  */
 function downloadCurrentFormAvatar() {
   const preview = document.getElementById('form-avatar-preview');
   const rawUrl = document.getElementById('form-avatar-url') ? document.getElementById('form-avatar-url').value : '';
+  // ถ้ามีลิงก์ Drive ที่บันทึกไว้แล้ว ให้ดาวน์โหลดไฟล์ต้นฉบับผ่านลิงก์นั้น ไม่ใช่ thumbnail ที่ preview ใช้แสดงผล
   const url = rawUrl ? resolveAvatarDownloadUrl({ avatar: rawUrl }) : (preview ? preview.src : '');
   const nameInput = (document.getElementById('form-first-name') || {}).value || 'avatar';
   downloadImageFromUrl(url, `avatar-${nameInput}.jpg`);
 }
 
+function handleImageUrlInput(url) {
+  if (url && url.trim().length > 5) {
+    const directUrl = convertToDirectImageUrl(url);
+    document.getElementById('form-avatar-preview').src = directUrl;
+    document.getElementById('form-avatar-url').value = directUrl;
+  }
+}
+
 /**
- * บันทึกกำลังพลใหม่ (User ทำได้แค่ "เพิ่ม" เท่านั้น — ไม่มีโหมดแก้ไข)
+ * อัปเดตรูปภาพทับไฟล์เดิมทันทีจากหน้าฟอร์ม (โดยไม่ต้องบันทึกทั้งฟอร์ม)
+ */
+async function updateFormAvatarDirectly() {
+  const formId = document.getElementById('form-id') ? document.getElementById('form-id').value.trim() : '';
+  const originalId = document.getElementById('form-original-id') ? document.getElementById('form-original-id').value.trim() : '';
+  const targetId = originalId || formId;
+
+  if (!targetId) {
+    showToast('กรุณาระบุรหัสในระบบ (ID) ก่อนอัปเดตรูป', 'warning');
+    return;
+  }
+
+  const preview = document.getElementById('form-avatar-preview');
+  const currentSrc = preview ? preview.src : '';
+
+  // ถ้ามีการเลือกรูปใหม่รออยู่ใน Preview แล้ว (data:image/...)
+  if (currentSrc && currentSrc.startsWith('data:')) {
+    await processDirectAvatarUpload(targetId, currentSrc);
+  } else {
+    // ถ้ายังไม่ได้เลือกรูป ให้เปิดหน้าต่างเลือกไฟล์
+    const fileInput = document.getElementById('form-avatar-direct-file');
+    if (fileInput) {
+      fileInput.value = '';
+      fileInput.click();
+    }
+  }
+}
+
+/**
+ * จัดการเมื่อผู้ใช้เลือกไฟล์สำหรับปุ่ม Update รูปทับเดิมในหน้าฟอร์ม
+ */
+function handleDirectAvatarFileChosen(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const formId = document.getElementById('form-id') ? document.getElementById('form-id').value.trim() : '';
+  const originalId = document.getElementById('form-original-id') ? document.getElementById('form-original-id').value.trim() : '';
+  const targetId = originalId || formId;
+
+  if (!targetId) {
+    showToast('ไม่พบรหัสกำลังพล', 'error');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const dataUrl = e.target.result;
+    const preview = document.getElementById('form-avatar-preview');
+    if (preview) preview.src = dataUrl;
+    await processDirectAvatarUpload(targetId, dataUrl);
+  };
+  reader.readAsDataURL(file);
+}
+
+/**
+ * อัปเดตรูปภาพทับไฟล์เดิมทันทีจากหน้าบัตรประวัติ (View Modal / Dossier)
+ */
+function updateViewModalAvatarDirectly() {
+  if (!currentViewingId) {
+    showToast('ไม่พบข้อมูลกำลังพลที่กำลังดูอยู่', 'error');
+    return;
+  }
+  const fileInput = document.getElementById('view-avatar-direct-file');
+  if (fileInput) {
+    fileInput.value = '';
+    fileInput.click();
+  }
+}
+
+/**
+ * จัดการเมื่อผู้ใช้เลือกไฟล์สำหรับปุ่ม Update รูปในหน้าบัตรประวัติ
+ */
+function handleViewDirectAvatarChosen(event) {
+  const file = event.target.files[0];
+  if (!file || !currentViewingId) return;
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const dataUrl = e.target.result;
+    await processDirectAvatarUpload(currentViewingId, dataUrl, true);
+  };
+  reader.readAsDataURL(file);
+}
+
+/**
+ * ฟังก์ชันแกนหลักในการอัปโหลดรูปเขียนทับไฟล์เดิมบน Google Drive และบันทึกลงระบบ
+ */
+async function processDirectAvatarUpload(personnelId, dataUrl, refreshViewModal = false) {
+  try {
+    showToast('กำลังอัปเดตรูปภาพเขียนทับไฟล์เดิมบนคลาวด์...', 'info');
+
+    const mimeType = dataUrl.substring(5, dataUrl.indexOf(';'));
+    const ext = mimeType.split('/')[1] || 'jpg';
+    const oldRecord = personnelList.find(p => String(p.id) === String(personnelId));
+    const oldFileId = oldRecord ? extractDriveFileId(oldRecord.avatar || '') : null;
+
+    // อัปโหลดเขียนทับไฟล์เดิมใน Drive
+    const cloudUrl = await uploadPhotoToCloud(dataUrl, `${personnelId}.${ext}`, mimeType, personnelId, oldFileId);
+    
+    // เพิ่ม timestamp เพื่อบังคับให้เบราว์เซอร์โหลดรูปใหม่ทันที ไม่ติดแคชรูปเก่า
+    const cacheBuster = `&v=${Date.now()}`;
+    const directUrl = cloudUrl.includes('?') ? `${cloudUrl}${cacheBuster}` : `${cloudUrl}?${cacheBuster}`;
+
+    // อัปเดตในข้อมูลกำลังพล
+    if (oldRecord) {
+      oldRecord.avatar = directUrl;
+      await savePersonnelToCloud(oldRecord);
+    }
+
+    // อัปเดตช่องใน Form (ถ้าเปิดอยู่)
+    const preview = document.getElementById('form-avatar-preview');
+    if (preview) preview.src = directUrl;
+    const urlInput = document.getElementById('form-avatar-url');
+    if (urlInput) urlInput.value = directUrl;
+
+    // บันทึกลง LocalStorage และรีเฟรชหน้าจอ
+    localStorage.setItem('MILITARY_ENERGY_PERSONNEL_DATA_v3', JSON.stringify(personnelList));
+    renderApp();
+
+    if (refreshViewModal && currentViewingId) {
+      viewPersonnel(currentViewingId);
+    }
+
+    showToast('อัปเดตรูปภาพเขียนทับรูปเดิมเรียบร้อยแล้ว!', 'success');
+  } catch (err) {
+    showToast(`อัปเดตรูปภาพไม่สำเร็จ: ${err.message}`, 'error');
+  }
+}
+
+/**
+ * บันทึกข้อมูลกำลังพล (Submit Form)
  */
 async function handleFormSubmit(event) {
   event.preventDefault();
 
-  handleFormSectionChange();
+  handleFormSectionChange(); // Ensure department string is composed
 
+  const rawEnteredId = (document.getElementById('form-id') ? document.getElementById('form-id').value : '').trim();
+  const enteredId = formatPersonnelId(rawEnteredId);
+  const originalId = formatPersonnelId((document.getElementById('form-original-id') ? document.getElementById('form-original-id').value : '').trim());
   const branch = document.getElementById('form-branch').value;
   const rank = document.getElementById('form-rank').value;
   const rankTier = parseInt(document.getElementById('form-rank-tier').value, 10) || getRankTier(rank, branch);
@@ -1356,6 +2593,11 @@ async function handleFormSubmit(event) {
   const department = document.getElementById('form-department').value.trim();
   const position = getFormPositionValue();
   const status = document.getElementById('form-status').value;
+  const secondedToSelect = document.getElementById('form-seconded-to');
+  const secondedTo = secondedToSelect ? secondedToSelect.value.trim() : '';
+  const secondedSectionSelect = document.getElementById('form-seconded-section');
+  const secondedToSection = secondedTo && secondedSectionSelect ? secondedSectionSelect.value.trim() : '';
+  const homeDivision = document.getElementById('form-division').value;
   const joinedYear = parseInt(document.getElementById('form-joined-year').value, 10) || null;
   const phone = document.getElementById('form-phone').value.trim();
   const email = document.getElementById('form-email').value.trim();
@@ -1372,7 +2614,19 @@ async function handleFormSubmit(event) {
     return;
   }
 
-  const newId = generateNextPersonnelId();
+  if (secondedTo && secondedTo === homeDivision) {
+    showToast('กองที่ไปช่วยราชการต้องไม่ใช่กองต้นสังกัดเดียวกัน', 'error');
+    return;
+  }
+
+  const recordId = enteredId || originalId || generateNextPersonnelId();
+
+  // ตรวจสอบว่ารหัส ID มีการซ้ำกับกำลังพลผู้อื่นหรือไม่
+  const isDuplicate = personnelList.some(p => String(formatPersonnelId(p.id)) === String(recordId) && String(formatPersonnelId(p.id)) !== String(originalId));
+  if (isDuplicate) {
+    showToast(`รหัสระบบ / รหัส ID "${recordId}" มีอยู่ในระบบแล้ว กรุณาใช้รหัสอื่น`, 'error');
+    return;
+  }
 
   // ถ้าเพิ่งอัปโหลดรูปใหม่ (ยังเป็น Base64 อยู่) ให้อัปโหลดขึ้น Google Drive ก่อน แล้วเอาลิงก์มาใช้แทน
   if (avatar && avatar.startsWith('data:')) {
@@ -1380,48 +2634,96 @@ async function handleFormSubmit(event) {
       showToast('กำลังอัปโหลดรูปภาพขึ้นระบบคลาวด์...', 'info');
       const mimeType = avatar.substring(5, avatar.indexOf(';'));
       const ext = mimeType.split('/')[1] || 'jpg';
-      avatar = await uploadPhotoToCloud(avatar, `${newId}.${ext}`, mimeType, newId, null);
+      // ถ้าเป็นการแก้ไขและเคยมีรูปใน Drive อยู่แล้ว ให้ส่ง fileId เดิมไปเขียนทับ
+      const oldRecord = originalId ? personnelList.find(p => String(p.id) === String(originalId)) : null;
+      const oldFileId = oldRecord ? extractDriveFileId(oldRecord.avatar || '') : null;
+      avatar = await uploadPhotoToCloud(avatar, `${recordId}.${ext}`, mimeType, recordId, oldFileId);
     } catch (err) {
       showToast(`อัปโหลดรูปภาพไม่สำเร็จ: ${err.message}`, 'error');
       return;
     }
   }
 
-  const newPersonnel = {
-    id: newId,
-    branch,
-    rank,
-    rankTier,
-    firstName,
-    lastName,
-    serviceId,
-    department,
-    position,
-    status,
-    joinedYear,
-    phone,
-    email,
-    notes,
-    avatar
-  };
+  let recordToSave;
+
+  if (originalId) {
+    // แก้ไขข้อมูลเดิม (Update)
+    const idx = personnelList.findIndex(p => String(p.id) === String(originalId));
+    if (idx !== -1) {
+      // ถ้ารหัส ID เปลี่ยน
+      if (originalId !== recordId) {
+        replacePersonIdInRosterLayout(originalId, recordId);
+        try {
+          await deletePersonnelFromCloud(originalId);
+        } catch (_) {}
+      }
+
+      personnelList[idx] = {
+        ...personnelList[idx],
+        id: recordId,
+        branch,
+        rank,
+        rankTier,
+        firstName,
+        lastName,
+        serviceId,
+        department,
+        position,
+        status,
+        joinedYear,
+        phone,
+        email,
+        notes,
+        avatar,
+        secondedTo,
+        secondedToSection
+      };
+      recordToSave = personnelList[idx];
+    }
+  } else {
+    // เพิ่มกำลังพลใหม่ (Create)
+    const newPersonnel = {
+      id: recordId,
+      branch,
+      rank,
+      rankTier,
+      firstName,
+      lastName,
+      serviceId,
+      department,
+      position,
+      status,
+      joinedYear,
+      phone,
+      email,
+      notes,
+      avatar,
+      secondedTo,
+      secondedToSection
+    };
+    personnelList.unshift(newPersonnel);
+    recordToSave = newPersonnel;
+  }
 
   try {
-    await savePersonnelToCloud(newPersonnel);
+    await savePersonnelToCloud(recordToSave);
+    saveData(); // อัปเดตแคช LocalStorage ด้วย
+    showToast(originalId ? `อัปเดตข้อมูล ${rank} ${firstName} สำเร็จ` : `เพิ่มกำลังพล ${rank} ${firstName} เรียบร้อย`, 'success');
   } catch (err) {
     showToast(`บันทึกข้อมูลไม่สำเร็จ: ${err.message}`, 'error');
     return;
   }
 
-  personnelList.unshift(newPersonnel);
-  saveData(); // อัปเดตแคช LocalStorage ด้วย
   closeFormModal();
   renderApp();
-
-  showToast(`เพิ่มกำลังพล ${rank} ${firstName} เรียบร้อย`, 'success');
 }
 
-// ================= VIEW PROFILE CARD MODAL (read-only) =================
 
+// ================= VIEW PROFILE CARD MODAL =================
+
+/**
+ * เปิด Modal ดูบัตรประจำตัวและประวัติกำลังพล
+ */
 function viewPersonnel(id) {
   const p = personnelList.find(item => String(item.id) === String(id));
   if (!p) return;
@@ -1435,9 +2737,11 @@ function viewPersonnel(id) {
   if (container) {
     container.innerHTML = `
       <div class="military-id-card rounded-2xl p-6 relative shadow-2xl border border-slate-700">
-
+        
+        <!-- Watermark -->
         <i class="fa-solid ${branch.icon} watermark-emblem text-slate-400"></i>
 
+        <!-- Top Header of ID Card -->
         <div class="flex items-center justify-between border-b border-slate-700/80 pb-4">
           <div class="flex items-center space-x-3">
             <div class="w-10 h-10 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-lg ${branch.badgeClass}">
@@ -1455,16 +2759,14 @@ function viewPersonnel(id) {
           </div>
         </div>
 
+        <!-- Main Body of Card -->
         <div class="flex flex-col sm:flex-row items-center sm:items-start gap-5 my-5">
-          <div class="flex flex-col items-center gap-2 flex-shrink-0">
-            <div class="w-28 h-36 rounded-xl overflow-hidden border-2 border-amber-500/80 shadow-lg bg-slate-950">
-              <img src="${resolveAvatarUrl(p)}" alt="${p.firstName}" class="w-full h-full object-cover" onerror="this.src='${getDefaultAvatarForBranch(p.branch)}'">
-            </div>
-            <button onclick="downloadMyAvatar('${resolveAvatarDownloadUrl(p)}', '${escapeHtml(p.firstName)}_${escapeHtml(p.lastName)}')" class="no-print w-full text-[11px] py-1.5 px-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-amber-300 hover:text-amber-200 border border-slate-700 transition flex items-center justify-center gap-1.5">
-              <i class="fa-solid fa-download"></i> ดาวน์โหลดรูป
-            </button>
+          <!-- Portrait Photo -->
+          <div class="w-28 h-36 rounded-xl overflow-hidden border-2 border-amber-500/80 shadow-lg flex-shrink-0 bg-slate-950">
+            <img src="${resolveAvatarUrl(p)}" alt="${p.firstName}" class="w-full h-full object-cover" onerror="this.src='${getDefaultAvatarForBranch(p.branch)}'">
           </div>
 
+          <!-- Personnel Info Sheet -->
           <div class="flex-1 space-y-2 text-center sm:text-left w-full">
             <div>
               <div class="text-xs font-semibold text-amber-400">${escapeHtml(p.rank)}</div>
@@ -1489,10 +2791,18 @@ function viewPersonnel(id) {
                 <span class="text-slate-500 block text-[10px]">กอง / สำนัก / แผนก ในกรมการพลังงานทหาร:</span>
                 <span class="font-semibold text-amber-300">${escapeHtml(p.department)}</span>
               </div>
+              ${p.secondedTo ? `
+              <div class="col-span-2">
+                <span class="text-slate-500 block text-[10px]">ช่วยปฏิบัติราชการ:</span>
+                <span class="inline-flex items-center gap-1.5 font-semibold text-sky-300">
+                  <i class="fa-solid fa-right-left text-[10px]"></i> ${escapeHtml(formatSecondedTo(p))}
+                </span>
+              </div>` : ''}
             </div>
           </div>
         </div>
 
+        <!-- Extra Details (Contact, Joined Year, Notes) -->
         <div class="bg-slate-950/80 rounded-xl p-4 border border-slate-800 space-y-2 text-xs">
           <div class="grid grid-cols-2 gap-3 text-slate-300">
             <div>
@@ -1509,7 +2819,7 @@ function viewPersonnel(id) {
             </div>
             <div>
               <span class="text-slate-500 text-[10px] block">รหัสระบบ / รหัส ID</span>
-              <span class="font-mono font-bold text-amber-400">${formatPersonnelId(p.id)}</span>
+              <span class="font-mono font-bold text-amber-400 text-sm">${formatPersonnelId(p.id)}</span>
             </div>
           </div>
 
@@ -1521,6 +2831,7 @@ function viewPersonnel(id) {
           ` : ''}
         </div>
 
+        <!-- Barcode Decorative Mock -->
         <div class="mt-4 pt-3 border-t border-slate-800/60 flex items-center justify-between text-[10px] font-mono text-slate-500">
           <span>DED-ID-${formatPersonnelId(p.id)}</span>
           <span class="tracking-widest">||| | ||||| || ||| |||| | |||</span>
@@ -1529,6 +2840,24 @@ function viewPersonnel(id) {
 
       </div>
     `;
+  }
+
+  // ผูกปุ่ม Edit และ Delete ใน View Modal
+  const editBtn = document.getElementById('view-edit-btn');
+  const deleteBtn = document.getElementById('view-delete-btn');
+  
+  if (editBtn) {
+    editBtn.onclick = () => {
+      closeViewModal();
+      editPersonnel(id);
+    };
+  }
+
+  if (deleteBtn) {
+    deleteBtn.onclick = () => {
+      closeViewModal();
+      deletePersonnelPrompt(id);
+    };
   }
 
   const modal = document.getElementById('view-modal');
@@ -1546,35 +2875,236 @@ function printCurrentCard() {
   window.print();
 }
 
+// ================= DELETE MODAL HANDLERS =================
+
+function deletePersonnelPrompt(id) {
+  const p = personnelList.find(item => String(item.id) === String(id));
+  if (!p) return;
+
+  currentDeletingId = id;
+  const preview = document.getElementById('delete-modal-preview');
+  if (preview) {
+    preview.innerHTML = `
+      <div class="flex items-center gap-3">
+        <img src="${resolveAvatarUrl(p)}" class="w-10 h-10 rounded-full object-cover border border-slate-700">
+        <div>
+          <div class="font-bold text-white">${p.rank} ${p.firstName} ${p.lastName}</div>
+          <div class="text-slate-400">${p.position} • ${p.department}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  const confirmBtn = document.getElementById('confirm-delete-btn');
+  if (confirmBtn) {
+    confirmBtn.onclick = () => executeDeletePersonnel(id);
+  }
+
+  const modal = document.getElementById('delete-modal');
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+}
+
+function closeDeleteModal() {
+  const modal = document.getElementById('delete-modal');
+  modal.classList.add('hidden');
+  modal.classList.remove('flex');
+  currentDeletingId = null;
+}
+
+async function executeDeletePersonnel(id) {
+  const p = personnelList.find(item => String(item.id) === String(id));
+  try {
+    await deletePersonnelFromCloud(id);
+  } catch (err) {
+    showToast(`ลบข้อมูลไม่สำเร็จ: ${err.message}`, 'error');
+    return;
+  }
+  personnelList = personnelList.filter(item => String(item.id) !== String(id));
+  saveData(); // อัปเดตแคช LocalStorage ด้วย
+  closeDeleteModal();
+  renderApp();
+  showToast(`ลบข้อมูล ${p ? p.rank + ' ' + p.firstName : ''} เรียบร้อยแล้ว`, 'info');
+}
+
+// ================= BACKUP / EXPORT / IMPORT =================
+
+/**
+ * ส่งออกไฟล์ JSON สำหรับสำรองข้อมูล
+ * (แปลงรูปภาพที่อ้างอิงจากไฟล์ในโฟลเดอร์ให้เป็น Base64 ฝังในไฟล์ JSON ด้วย
+ *  เพื่อให้ไฟล์สำรองนี้เปิดใช้ได้ครบถ้วนในตัวเองบนทุกเครื่อง/เบราว์เซอร์)
+ */
+async function exportData() {
+  showToast('กำลังเตรียมไฟล์สำรองข้อมูล...', 'info');
+
+  const dataStr = JSON.stringify(personnelList, null, 2);
+  const blob = new Blob([dataStr], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
+  
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `defense_energy_personnel_backup_${dateStr}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  showToast('ส่งออกไฟล์สำรองข้อมูล JSON สำเร็จ', 'success');
+}
+
+/**
+ * เปิด Modal นำเข้าข้อมูล
+ */
+function openImportModal() {
+  document.getElementById('import-file-input').value = '';
+  document.getElementById('import-text-input').value = '';
+  const modal = document.getElementById('import-modal');
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+}
+
+function closeImportModal() {
+  const modal = document.getElementById('import-modal');
+  modal.classList.add('hidden');
+  modal.classList.remove('flex');
+}
+
+function handleImportFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    document.getElementById('import-text-input').value = e.target.result;
+  };
+  reader.readAsText(file);
+}
+
+/**
+ * นำเข้าข้อมูล JSON — ส่งขึ้น Google Sheet ทีละคน (เพิ่ม/อัปเดต)
+ * หมายเหตุ: การนำเข้าแบบนี้จะ "เพิ่มหรืออัปเดต" ตาม id ที่ตรงกัน แต่จะไม่ลบรายการที่มีอยู่ใน Sheet
+ * แล้วไม่ได้อยู่ใน JSON ที่นำเข้า (ต่างจากพฤติกรรมเดิมที่ทับข้อมูลทั้งหมด) เพื่อป้องกันข้อมูลหายโดยไม่ตั้งใจ
+ */
+async function executeImportJSON() {
+  const text = document.getElementById('import-text-input').value.trim();
+  if (!text) {
+    showToast('กรุณาระบุข้อมูล JSON', 'error');
+    return;
+  }
+
+  try {
+    const data = JSON.parse(text);
+    if (!Array.isArray(data)) {
+      throw new Error('ข้อมูลต้องเป็น Array ของรายการกำลังพล');
+    }
+
+    if (data.length > 0 && (!data[0].firstName || !data[0].rank)) {
+      throw new Error('โครงสร้างข้อมูลไม่ถูกต้อง');
+    }
+
+    showToast(`กำลังนำเข้าข้อมูล ${data.length} รายการขึ้นคลาวด์...`, 'info');
+    let successCount = 0;
+    for (const record of data) {
+      try {
+        await savePersonnelToCloud(record);
+        successCount++;
+      } catch (err) {
+        console.error('นำเข้ารายการล้มเหลว:', record.id, err);
+      }
+    }
+
+    await initData(); // โหลดข้อมูลล่าสุดจากคลาวด์กลับมาแสดง
+    closeImportModal();
+    renderApp();
+    showToast(`นำเข้าข้อมูลสำเร็จ ${successCount}/${data.length} รายการ`, successCount === data.length ? 'success' : 'error');
+  } catch (err) {
+    showToast(`นำเข้าข้อมูลล้มเหลว: ${err.message}`, 'error');
+  }
+}
+
+/**
+ * โหลดข้อมูลล่าสุดจาก Google Sheet ใหม่ (แทนที่การ "รีเซ็ตเป็นค่าเริ่มต้น" แบบเดิม
+ * ซึ่งจะทับข้อมูลจริงบน Sheet — จึงเปลี่ยนเป็นดึงข้อมูลปัจจุบันจากคลาวด์มาแสดงใหม่แทน เพื่อความปลอดภัยของข้อมูล)
+ */
+async function resetDataWithConfirm() {
+  if (confirm('ต้องการโหลดข้อมูลกำลังพลล่าสุดจากฐานข้อมูลคลาวด์ใหม่หรือไม่? (การเปลี่ยนแปลงที่ยังไม่บันทึกในหน้าจอนี้จะหายไป)')) {
+    try {
+      await initData();
+      clearAllFilters();
+      renderApp();
+      showToast('โหลดข้อมูลล่าสุดจากคลาวด์เรียบร้อยแล้ว', 'info');
+    } catch (err) {
+      showToast(`โหลดข้อมูลไม่สำเร็จ: ${err.message}`, 'error');
+    }
+  }
+}
+
 // ================= UTILITIES & HELPERS =================
 
 function getRankTierBadge(tier, branch, rank = '') {
   if (branch === 'civil' || rank.startsWith('ขรก.พลเรือนกลาโหม')) {
-    return { className: 'tier-civil', label: `ขรก.พลเรือน (Tier ${tier})`, icon: '<i class="fa-solid fa-user-tie text-purple-400"></i>' };
+    return {
+      className: 'tier-civil',
+      label: `ขรก.พลเรือน (Tier ${tier})`,
+      icon: '<i class="fa-solid fa-user-tie text-purple-400"></i>'
+    };
   }
+
   if (branch === 'employee' || rank.includes('พนักงาน') || rank.includes('ลูกจ้าง')) {
-    return { className: 'tier-employee', label: `พนง.พลังงานทหาร (Tier ${tier})`, icon: '<i class="fa-solid fa-building-user text-amber-400"></i>' };
+    return {
+      className: 'tier-employee',
+      label: `พนง.พลังงานทหาร (Tier ${tier})`,
+      icon: '<i class="fa-solid fa-building-user text-amber-400"></i>'
+    };
   }
+
   if (tier <= 4) {
-    return { className: 'tier-general', label: `ชั้นนายพล (Tier ${tier})`, icon: '<i class="fa-solid fa-star text-amber-400"></i>' };
+    return {
+      className: 'tier-general',
+      label: `ชั้นนายพล (Tier ${tier})`,
+      icon: '<i class="fa-solid fa-star text-amber-400"></i>'
+    };
   } else if (tier <= 8) {
-    return { className: 'tier-field', label: `สัญญาบัตร (Tier ${tier})`, icon: '<i class="fa-solid fa-shield text-slate-300"></i>' };
+    return {
+      className: 'tier-field',
+      label: `สัญญาบัตร (Tier ${tier})`,
+      icon: '<i class="fa-solid fa-shield text-slate-300"></i>'
+    };
   } else if (tier <= 11) {
-    return { className: 'tier-company', label: `สัญญาบัตรต้น (Tier ${tier})`, icon: '<i class="fa-solid fa-chevron-up text-amber-200"></i>' };
+    return {
+      className: 'tier-company',
+      label: `สัญญาบัตรต้น (Tier ${tier})`,
+      icon: '<i class="fa-solid fa-chevron-up text-amber-200"></i>'
+    };
   } else if (tier <= 18) {
-    return { className: 'tier-nco', label: `ประทวน (Tier ${tier})`, icon: '<i class="fa-solid fa-bars text-slate-400"></i>' };
+    return {
+      className: 'tier-nco',
+      label: `ประทวน (Tier ${tier})`,
+      icon: '<i class="fa-solid fa-bars text-slate-400"></i>'
+    };
   } else {
-    return { className: 'tier-employee', label: `พนง.พลังงานทหาร (Tier ${tier})`, icon: '<i class="fa-solid fa-building-user text-amber-400"></i>' };
+    return {
+      className: 'tier-employee',
+      label: `พนง.พลังงานทหาร (Tier ${tier})`,
+      icon: '<i class="fa-solid fa-building-user text-amber-400"></i>'
+    };
   }
 }
 
 function getStatusInfo(status) {
   switch (status) {
-    case 'active': return { label: 'ปฏิบัติหน้าที่ปกติ', className: 'status-active' };
-    case 'duty': return { label: 'ไปราชการ / ฝึกภาคสนาม', className: 'status-duty' };
-    case 'leave': return { label: 'ลาพัก / ศึกษาต่อ', className: 'status-leave' };
-    case 'retired': return { label: 'ปลดประจำการ / พ้นสภาพ', className: 'status-retired' };
-    default: return { label: 'ปฏิบัติหน้าที่ปกติ', className: 'status-active' };
+    case 'active':
+      return { label: 'ปฏิบัติหน้าที่ปกติ', className: 'status-active' };
+    case 'duty':
+      return { label: 'ไปราชการ / ฝึกภาคสนาม', className: 'status-duty' };
+    case 'leave':
+      return { label: 'ลาพัก / ศึกษาต่อ', className: 'status-leave' };
+    case 'retired':
+      return { label: 'ปลดประจำการ / พ้นสภาพ', className: 'status-retired' };
+    default:
+      return { label: 'ปฏิบัติหน้าที่ปกติ', className: 'status-active' };
   }
 }
 
@@ -1593,6 +3123,9 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
+/**
+ * Toast Notification System
+ */
 function showToast(message, type = 'info') {
   const container = document.getElementById('toast-container');
   if (!container) return;
@@ -1600,16 +3133,33 @@ function showToast(message, type = 'info') {
   const toast = document.createElement('div');
   let icon = 'fa-circle-info text-blue-400';
   let borderColor = 'border-slate-700';
-  if (type === 'success') { icon = 'fa-circle-check text-emerald-400'; borderColor = 'border-emerald-500/40'; }
-  else if (type === 'error') { icon = 'fa-circle-exclamation text-red-400'; borderColor = 'border-red-500/40'; }
+
+  if (type === 'success') {
+    icon = 'fa-circle-check text-emerald-400';
+    borderColor = 'border-emerald-500/40';
+  } else if (type === 'error') {
+    icon = 'fa-circle-exclamation text-red-400';
+    borderColor = 'border-red-500/40';
+  }
 
   toast.className = `p-3.5 rounded-xl bg-slate-900/95 text-slate-100 text-xs shadow-2xl border ${borderColor} flex items-center space-x-2.5 transform transition-all duration-300 translate-y-2 opacity-0 pointer-events-auto`;
-  toast.innerHTML = `<i class="fa-solid ${icon} text-base"></i><span class="font-medium">${escapeHtml(message)}</span>`;
+  toast.innerHTML = `
+    <i class="fa-solid ${icon} text-base"></i>
+    <span class="font-medium">${escapeHtml(message)}</span>
+  `;
+
   container.appendChild(toast);
 
-  setTimeout(() => toast.classList.remove('translate-y-2', 'opacity-0'), 10);
+  // Animation in
+  setTimeout(() => {
+    toast.classList.remove('translate-y-2', 'opacity-0');
+  }, 10);
+
+  // Auto remove
   setTimeout(() => {
     toast.classList.add('opacity-0', 'translate-y-2');
-    setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 300);
+    setTimeout(() => {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 300);
   }, 3500);
 }
