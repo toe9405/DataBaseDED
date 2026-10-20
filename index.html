@@ -556,7 +556,7 @@
 
       <!-- Modal Body (Form) -->
       <form id="personnel-form" onsubmit="handleFormSubmit(event)" class="mt-4 space-y-4">
-        <input type="hidden" id="form-id">
+        <input type="hidden" id="form-original-id">
         <input type="hidden" id="form-rank-tier">
         <input type="hidden" id="form-department">
 
@@ -566,17 +566,21 @@
             <img id="form-avatar-preview" src="https://ded.mod.go.th/DED/media/unit-activities/logo-ded.png?ext=.png" alt="Avatar" class="w-20 h-20 rounded-full object-cover border-2 border-amber-500/60 shadow-lg">
             <label for="form-avatar-file" class="absolute inset-0 bg-black/60 rounded-full flex flex-col items-center justify-center text-white text-xs opacity-0 group-hover:opacity-100 cursor-pointer transition">
               <i class="fa-solid fa-camera mb-0.5"></i>
-              <span>เปลี่ยนรูป</span>
+              <span>เลือกรูป</span>
             </label>
             <input type="file" id="form-avatar-file" accept="image/*" class="hidden" onchange="handleImageUpload(event)">
+            <input type="file" id="form-avatar-direct-file" accept="image/*" class="hidden" onchange="handleDirectAvatarFileChosen(event)">
           </div>
           <div class="flex-1 text-center sm:text-left space-y-1.5">
             <div class="text-sm font-medium text-slate-200">รูปภาพประจำตัว (Profile Picture)</div>
-            <p class="text-xs text-slate-400">อัปโหลดภาพถ่ายเครื่องแบบ หรือระบุ URL รูปภาพ (ระบบจะแปลงเป็น Base64 อัตโนมัติ)</p>
-            <div class="flex items-center gap-2">
-              <input type="text" id="form-avatar-url" placeholder="หรือวาง URL รูปภาพที่นี่..." class="flex-1 text-xs py-1.5 px-3 bg-slate-900 border border-slate-700 rounded-lg text-slate-300 focus:outline-none focus:border-amber-500" onchange="handleImageUrlInput(this.value)">
+            <p class="text-xs text-slate-400">อัปโหลดภาพถ่ายเครื่องแบบ หรือระบุ URL รูปภาพ (กด Update รูป เพื่อเขียนทับไฟล์เดิมทันที)</p>
+            <div class="flex flex-wrap items-center gap-2">
+              <input type="text" id="form-avatar-url" placeholder="หรือวาง URL รูปภาพที่นี่..." class="flex-1 min-w-[160px] text-xs py-1.5 px-3 bg-slate-900 border border-slate-700 rounded-lg text-slate-300 focus:outline-none focus:border-amber-500" onchange="handleImageUrlInput(this.value)">
               <button type="button" onclick="document.getElementById('form-avatar-file').click()" class="text-xs py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg flex items-center gap-1">
-                <i class="fa-solid fa-upload"></i> อัปโหลด
+                <i class="fa-solid fa-upload"></i> เลือกรูป
+              </button>
+              <button type="button" id="btn-update-form-avatar" onclick="updateFormAvatarDirectly()" title="เปลี่ยนรูปและเขียนทับไฟล์เดิมทันที โดยไม่ต้องกดบันทึกทั้งฟอร์ม" class="text-xs py-1.5 px-3 bg-emerald-700/40 hover:bg-emerald-600/60 text-emerald-300 border border-emerald-500/40 rounded-lg flex items-center gap-1.5 transition font-medium">
+                <i class="fa-solid fa-arrows-rotate"></i> Update รูปทับเดิม
               </button>
               <button type="button" onclick="downloadCurrentFormAvatar()" title="ดาวน์โหลดรูปนี้เก็บไว้ที่เครื่อง" class="text-xs py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg flex items-center gap-1">
                 <i class="fa-solid fa-download text-sky-400"></i> ดาวน์โหลด
@@ -585,8 +589,20 @@
           </div>
         </div>
 
-        <!-- Branch & Service ID -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <!-- ID, Branch & Service ID -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <!-- Personnel ID (รหัสในระบบ) -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1.5">รหัสในระบบ (ID) <span class="text-amber-400">*</span></label>
+            <input
+              type="text"
+              id="form-id"
+              placeholder="เช่น 0001 (แก้ไขได้)"
+              required
+              class="w-full py-2.5 px-3 bg-slate-950 border border-slate-700 rounded-xl text-sm font-mono text-amber-300 focus:outline-none focus:border-amber-500"
+            >
+          </div>
+
           <!-- Branch -->
           <div>
             <label class="block text-xs font-semibold text-slate-300 mb-1.5">เหล่าทัพ / สังกัดเดิม <span class="text-red-400">*</span></label>
@@ -601,17 +617,17 @@
 
           <!-- Service ID -->
           <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1.5">เลขประจำตัว <span class="text-slate-500 font-normal">(ไม่บังคับ)</span></label>
+            <label class="block text-xs font-semibold text-slate-300 mb-1.5">เลขประจำตัว 10 หลัก <span class="text-slate-500 font-normal">(ไม่บังคับ)</span></label>
             <input
-    type="text"
-    id="form-service-id"
-    placeholder="เช่น 6533218497 หรือ 5514253895 (ตัวเลข 10 หลัก)"
-    inputmode="numeric"
-    pattern="[0-9]{10}"
-    maxlength="10"
-    oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"
-    class="w-full py-2.5 px-3 bg-slate-950 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-amber-500"
-  >
+              type="text"
+              id="form-service-id"
+              placeholder="เช่น 6533218497 (10 หลัก)"
+              inputmode="numeric"
+              pattern="[0-9]{10}"
+              maxlength="10"
+              oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"
+              class="w-full py-2.5 px-3 bg-slate-950 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-amber-500"
+            >
           </div>
         </div>
 
@@ -766,6 +782,10 @@
           <span>บัตรประวัติกำลังพล กรมการพลังงานทหาร (Personnel Dossier)</span>
         </div>
         <div class="flex items-center space-x-2">
+          <button onclick="updateViewModalAvatarDirectly()" title="เปลี่ยนรูปและเขียนทับไฟล์เดิมทันที" class="text-xs px-3 py-1.5 rounded-lg bg-emerald-700/40 hover:bg-emerald-600/60 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 transition font-medium">
+            <i class="fa-solid fa-arrows-rotate"></i> Update รูป
+          </button>
+          <input type="file" id="view-avatar-direct-file" accept="image/*" class="hidden" onchange="handleViewDirectAvatarChosen(event)">
           <button onclick="downloadCurrentViewAvatar()" class="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1">
             <i class="fa-solid fa-download text-sky-400"></i> ดาวน์โหลดรูป
           </button>
