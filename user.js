@@ -91,8 +91,38 @@ async function downloadMyAvatar(url, personName) {
   }
 }
 
+// ================= ผังกำลังพล: เก็บบนคลาวด์ให้ทุกเครื่องเห็นเหมือนกัน =================
+async function loadRosterFromCloud() {
+  const res = await fetch(API_URL + '?action=roster');
+  if (!res.ok) throw new Error('โหลดผังกำลังพลจากคลาวด์ไม่สำเร็จ');
+  const data = await res.json();
+  return (data && !Array.isArray(data) && data.layout && typeof data.layout === 'object') ? data.layout : {};
+}
+
+async function syncRosterFromCloud() {
+  try {
+    const cloud = await loadRosterFromCloud();
+    if (Object.keys(cloud).length) localStorage.setItem(ROSTER_STORAGE_KEY, JSON.stringify(cloud));
+  } catch (e) {
+    console.warn('โหลดผังกำลังพลจากคลาวด์ไม่สำเร็จ ใช้ผังในเครื่องแทน:', e);
+  }
+}
+
 // Application State
 let personnelList = [];
+
+/**
+ * จัดรูปแบบรหัสประจำตัว/รหัสระบบ (รหัส ID) ให้แสดงเป็นตัวเลข 4 หลักเสมอ โดยไม่ตัดเลข 0 นำหน้า
+ * เช่น 1 -> "0001", "0025" -> "0025"
+ */
+function formatPersonnelId(id) {
+  if (id === undefined || id === null || id === '') return '';
+  const str = String(id).trim();
+  if (/^\d+$/.test(str)) {
+    return str.padStart(4, '0');
+  }
+  return str;
+}
 
 // สร้างเลขประจำตัว 4 หลักถัดไป (ไม่มีตัวอักษรนำหน้า) โดยหาเลขที่มากที่สุดในระบบแล้ว +1
 function generateNextPersonnelId() {
@@ -132,15 +162,16 @@ async function initData() {
     personnelList = await loadPersonnelFromCloud();
     personnelList = personnelList.filter(p => !p.rank || !p.rank.includes('พลทหาร'));
     personnelList.forEach(p => {
-      if (p.id !== undefined && p.id !== null) p.id = String(p.id);
+      if (p.id !== undefined && p.id !== null) p.id = formatPersonnelId(p.id);
     });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(personnelList)); // แคชไว้เผื่อออฟไลน์
+    await syncRosterFromCloud(); // ผังกำลังพลใช้ร่วมกันทุกเครื่อง
   } catch (e) {
     console.error('โหลดจากคลาวด์ไม่สำเร็จ, ใช้ข้อมูลแคชล่าสุดแทน:', e);
     const cached = localStorage.getItem(STORAGE_KEY);
     personnelList = cached ? JSON.parse(cached) : [...INITIAL_PERSONNEL_DATA];
     personnelList.forEach(p => {
-      if (p.id !== undefined && p.id !== null) p.id = String(p.id);
+      if (p.id !== undefined && p.id !== null) p.id = formatPersonnelId(p.id);
     });
     showToast('เชื่อมต่อฐานข้อมูลคลาวด์ไม่ได้ กำลังแสดงข้อมูลที่แคชไว้ล่าสุด', 'error');
   }
@@ -255,11 +286,11 @@ function handleFormDivisionChange(divName) {
   if (!found) return;
 
   if (found.sections.length === 1 && found.sections[0] === found.division) {
-    secSelect.innerHTML = `<option value="">ประจำ${escapeHtml(found.division)}</option>`;
+    secSelect.innerHTML = `<option value="">${escapeHtml(found.division)}</option>`;
     secSelect.disabled = true;
   } else {
     secSelect.disabled = false;
-    let html = `<option value="">ประจำ${escapeHtml(found.division)} (ไม่ระบุแผนก)</option>`;
+    let html = `<option value="">${escapeHtml(found.division)} (ไม่ระบุแผนก)</option>`;
     found.sections.forEach(sec => {
       html += `<option value="${escapeHtml(sec)}">${escapeHtml(sec)}</option>`;
     });
@@ -481,9 +512,11 @@ function getFilteredAndSortedPersonnel() {
       const fullName = `${p.firstName} ${p.lastName}`.toLowerCase();
       const rank = (p.rank || '').toLowerCase();
       const serviceId = (p.serviceId || '').toLowerCase();
+      const pid = formatPersonnelId(p.id).toLowerCase();
+      const rawPid = String(p.id || '').toLowerCase();
       const dept = (p.department || '').toLowerCase();
       const pos = (p.position || '').toLowerCase();
-      return fullName.includes(q) || rank.includes(q) || serviceId.includes(q) || dept.includes(q) || pos.includes(q);
+      return fullName.includes(q) || rank.includes(q) || serviceId.includes(q) || pid.includes(q) || rawPid.includes(q) || dept.includes(q) || pos.includes(q);
     });
   }
 
@@ -616,11 +649,12 @@ function rosterSecondmentNote(p, div = rosterDivision) {
 
 function rosterSectionsOfDivision(div = rosterDivision) {
   const standard = typeof ENERGY_DEPT_STRUCTURE !== 'undefined' ? (ENERGY_DEPT_STRUCTURE.find(x => x.division === div)?.sections || []) : [];
-  const allSections = [...new Set([...standard, ...peopleInRosterDivision(div).map(p => rosterSectionOf(p, div))])];
-  return [
-    UNSPECIFIED_SECTION,
-    ...allSections.filter(s => s !== UNSPECIFIED_SECTION)
-  ];
+  const people = peopleInRosterDivision(div);
+  const allSections = [...new Set([...standard, ...people.map(p => rosterSectionOf(p, div))])];
+  const namedSections = allSections.filter(s => s !== UNSPECIFIED_SECTION);
+  // ส่วนกลางกอง (ไม่ระบุแผนก) อยู่บนสุดของผัง และแสดงเมื่อมีกำลังพลที่ไม่ได้ระบุแผนกอยู่จริง (หรือกองที่ไม่มีแผนกอื่นเลย)
+  const hasUnspecified = people.some(p => rosterSectionOf(p, div) === UNSPECIFIED_SECTION);
+  return (hasUnspecified || !namedSections.length) ? [UNSPECIFIED_SECTION, ...namedSections] : namedSections;
 }
 
 function rosterSectionLabel(section) {
@@ -801,11 +835,11 @@ function renderOrgChart() {
 
     return `
       <div class="border-t border-slate-800/80 pt-6 first:border-t-0 first:pt-0">
-        <h4 class="text-center text-sm sm:text-base font-bold text-indigo-300 uppercase tracking-wider mb-6 flex items-center justify-center gap-3">
+        ${sec === UNSPECIFIED_SECTION ? '' : `<h4 class="text-center text-sm sm:text-base font-bold text-indigo-300 uppercase tracking-wider mb-6 flex items-center justify-center gap-3">
           <span class="w-12 h-px bg-indigo-500/30"></span>
           ${rosterSectionLabel(sec)}
           <span class="w-12 h-px bg-indigo-500/30"></span>
-        </h4>
+        </h4>`}
         ${rowsPreviewHtml}
       </div>
     `;
@@ -822,9 +856,9 @@ function renderOrgChart() {
       <tr class="hover:bg-slate-800/40 transition">
         <td class="py-3 px-3 text-center text-xs font-semibold text-slate-400">${item.globalOrder}</td>
         <td class="py-3 px-3">
-          <span class="text-xs font-medium text-indigo-300 bg-indigo-950/40 border border-indigo-800/50 rounded-md px-2 py-0.5 whitespace-nowrap">
+          ${item.section === UNSPECIFIED_SECTION ? '<span class="text-slate-600">-</span>' : `<span class="text-xs font-medium text-indigo-300 bg-indigo-950/40 border border-indigo-800/50 rounded-md px-2 py-0.5 whitespace-nowrap">
             ${rosterSectionLabel(item.section)}
-          </span>
+          </span>`}
         </td>
         <td class="py-2 px-3">${photo}</td>
         <td class="py-3 px-3">
@@ -1474,8 +1508,8 @@ function viewPersonnel(id) {
               <span>พ.ศ. ${p.joinedYear || '-'}</span>
             </div>
             <div>
-              <span class="text-slate-500 text-[10px] block">รหัสระบบ</span>
-              <span class="font-mono text-slate-400">${p.id}</span>
+              <span class="text-slate-500 text-[10px] block">รหัสระบบ / รหัส ID</span>
+              <span class="font-mono font-bold text-amber-400">${formatPersonnelId(p.id)}</span>
             </div>
           </div>
 
@@ -1488,7 +1522,7 @@ function viewPersonnel(id) {
         </div>
 
         <div class="mt-4 pt-3 border-t border-slate-800/60 flex items-center justify-between text-[10px] font-mono text-slate-500">
-          <span>DED-ID-${p.serviceId}</span>
+          <span>DED-ID-${formatPersonnelId(p.id)}</span>
           <span class="tracking-widest">||| | ||||| || ||| |||| | |||</span>
           <span>DEFENSE ENERGY DEPT</span>
         </div>
