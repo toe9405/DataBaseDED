@@ -72,6 +72,19 @@ async function uploadPhotoToCloud(base64Data, fileName, mimeType, personnelId, o
 // Application State
 let personnelList = [];
 
+/**
+ * จัดรูปแบบรหัสประจำตัว/รหัสระบบ ให้แสดงเป็นตัวเลข 4 หลักเสมอ โดยไม่ตัดเลข 0 นำหน้า
+ * เช่น 1 -> "0001", "0025" -> "0025"
+ */
+function formatPersonnelId(id) {
+  if (id === undefined || id === null || id === '') return '';
+  const str = String(id).trim();
+  if (/^\d+$/.test(str)) {
+    return str.padStart(4, '0');
+  }
+  return str;
+}
+
 // สร้างเลขประจำตัว 4 หลักถัดไป (ไม่มีตัวอักษรนำหน้า) โดยหาเลขที่มากที่สุดในระบบแล้ว +1
 function generateNextPersonnelId() {
   let maxNum = 0;
@@ -209,7 +222,7 @@ async function initData() {
     personnelList = await loadPersonnelFromCloud();
     personnelList = personnelList.filter(p => !p.rank || !p.rank.includes('พลทหาร'));
     personnelList.forEach(p => {
-      if (p.id !== undefined && p.id !== null) p.id = String(p.id);
+      if (p.id !== undefined && p.id !== null) p.id = formatPersonnelId(p.id);
     });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(personnelList)); // แคชไว้เผื่อออฟไลน์
   } catch (e) {
@@ -217,7 +230,7 @@ async function initData() {
     const cached = localStorage.getItem(STORAGE_KEY);
     personnelList = cached ? JSON.parse(cached) : [...INITIAL_PERSONNEL_DATA];
     personnelList.forEach(p => {
-      if (p.id !== undefined && p.id !== null) p.id = String(p.id);
+      if (p.id !== undefined && p.id !== null) p.id = formatPersonnelId(p.id);
     });
     showToast('เชื่อมต่อฐานข้อมูลคลาวด์ไม่ได้ กำลังแสดงข้อมูลที่แคชไว้ล่าสุด', 'error');
   }
@@ -687,7 +700,9 @@ function getFilteredAndSortedPersonnel() {
       const serviceId = (p.serviceId || '').toLowerCase();
       const dept = (p.department || '').toLowerCase();
       const pos = (p.position || '').toLowerCase();
-      return fullName.includes(q) || rank.includes(q) || serviceId.includes(q) || dept.includes(q) || pos.includes(q);
+      const pid = formatPersonnelId(p.id).toLowerCase();
+      const rawPid = String(p.id || '').toLowerCase();
+      return fullName.includes(q) || rank.includes(q) || serviceId.includes(q) || dept.includes(q) || pos.includes(q) || pid.includes(q) || rawPid.includes(q);
     });
   }
 
@@ -1587,7 +1602,10 @@ function renderOrgChart() {
           <div class="font-semibold text-sm text-white hover:text-amber-400 cursor-pointer" onclick="viewPersonnel('${escapeHtml(p.id)}')">
             ${escapeHtml(p.rank || '')} ${escapeHtml(p.firstName || '')} ${escapeHtml(p.lastName || '')}
           </div>
-          <div class="text-[11px] text-slate-500">${escapeHtml(p.serviceId || '')}</div>
+          <div class="text-[11px] text-slate-500 flex items-center gap-1.5 font-mono">
+            <span class="text-amber-400 font-semibold" title="รหัสระบบ / ID">ID: ${formatPersonnelId(p.id)}</span>
+            ${p.serviceId ? `<span>• ${escapeHtml(p.serviceId)}</span>` : ''}
+          </div>
         </td>
         <td class="py-3 px-3">
           <div class="text-xs text-slate-300 font-medium">${escapeHtml(p.position || '-')}</div>
@@ -1946,11 +1964,11 @@ function renderGrid(list) {
             <span class="truncate font-medium text-slate-200" title="${escapeHtml(p.department)}">${escapeHtml(p.department)}</span>
           </div>
           <div class="flex items-center justify-between text-[11px] text-slate-400">
-            <span class="font-mono text-slate-400 flex items-center gap-1.5">
-              <i class="fa-solid fa-id-badge text-slate-500 w-4"></i>
-              ${escapeHtml(p.serviceId)}
+            <span class="font-mono text-amber-400 font-semibold flex items-center gap-1.5" title="รหัสระบบ / รหัส ID">
+              <i class="fa-solid fa-hashtag text-amber-500/80 text-[10px]"></i>
+              ID: ${formatPersonnelId(p.id)}
             </span>
-            <span>ปีบรรจุ: ${p.joinedYear || '-'}</span>
+            <span class="font-mono text-slate-400" title="เลขประจำตัว">${p.serviceId ? escapeHtml(p.serviceId) : (p.joinedYear ? `ปีบรรจุ: ${p.joinedYear}` : '')}</span>
           </div>
         </div>
 
@@ -1998,7 +2016,10 @@ function renderTable(list) {
             </div>
             <div>
               <div class="font-bold text-white">${escapeHtml(p.firstName)} ${escapeHtml(p.lastName)}</div>
-              <div class="text-xs font-mono text-slate-400">${escapeHtml(p.serviceId)}</div>
+              <div class="text-xs font-mono text-slate-400 flex items-center gap-2">
+                <span class="text-amber-400 font-semibold" title="รหัสระบบ / รหัส ID">ID: ${formatPersonnelId(p.id)}</span>
+                ${p.serviceId ? `<span>• ${escapeHtml(p.serviceId)}</span>` : ''}
+              </div>
             </div>
           </div>
         </td>
@@ -2106,9 +2127,9 @@ function editPersonnel(id) {
   const p = personnelList.find(item => String(item.id) === String(id));
   if (!p) return;
 
-  document.getElementById('form-id').value = p.id;
+  document.getElementById('form-id').value = formatPersonnelId(p.id);
   const origEl = document.getElementById('form-original-id');
-  if (origEl) origEl.value = p.id;
+  if (origEl) origEl.value = formatPersonnelId(p.id);
   document.getElementById('form-modal-title').textContent = `แก้ไขข้อมูล: ${p.rank} ${p.firstName}`;
   document.getElementById('form-modal-icon').innerHTML = '<i class="fa-solid fa-pen-to-square text-blue-400"></i>';
 
@@ -2492,8 +2513,9 @@ async function handleFormSubmit(event) {
 
   handleFormSectionChange(); // Ensure department string is composed
 
-  const enteredId = (document.getElementById('form-id') ? document.getElementById('form-id').value : '').trim();
-  const originalId = (document.getElementById('form-original-id') ? document.getElementById('form-original-id').value : '').trim();
+  const rawEnteredId = (document.getElementById('form-id') ? document.getElementById('form-id').value : '').trim();
+  const enteredId = formatPersonnelId(rawEnteredId);
+  const originalId = formatPersonnelId((document.getElementById('form-original-id') ? document.getElementById('form-original-id').value : '').trim());
   const branch = document.getElementById('form-branch').value;
   const rank = document.getElementById('form-rank').value;
   const rankTier = parseInt(document.getElementById('form-rank-tier').value, 10) || getRankTier(rank, branch);
@@ -2532,9 +2554,9 @@ async function handleFormSubmit(event) {
   const recordId = enteredId || originalId || generateNextPersonnelId();
 
   // ตรวจสอบว่ารหัส ID มีการซ้ำกับกำลังพลผู้อื่นหรือไม่
-  const isDuplicate = personnelList.some(p => String(p.id) === String(recordId) && String(p.id) !== String(originalId));
+  const isDuplicate = personnelList.some(p => String(formatPersonnelId(p.id)) === String(recordId) && String(formatPersonnelId(p.id)) !== String(originalId));
   if (isDuplicate) {
-    showToast(`รหัสในระบบ (ID) "${recordId}" มีอยู่ในระบบแล้ว กรุณาใช้รหัสอื่น`, 'error');
+    showToast(`รหัสระบบ / รหัส ID "${recordId}" มีอยู่ในระบบแล้ว กรุณาใช้รหัสอื่น`, 'error');
     return;
   }
 
@@ -2728,8 +2750,8 @@ function viewPersonnel(id) {
               <span>พ.ศ. ${p.joinedYear || '-'}</span>
             </div>
             <div>
-              <span class="text-slate-500 text-[10px] block">รหัสระบบ</span>
-              <span class="font-mono text-slate-400">${p.id}</span>
+              <span class="text-slate-500 text-[10px] block">รหัสระบบ / รหัส ID</span>
+              <span class="font-mono font-bold text-amber-400 text-sm">${formatPersonnelId(p.id)}</span>
             </div>
           </div>
 
@@ -2743,7 +2765,7 @@ function viewPersonnel(id) {
 
         <!-- Barcode Decorative Mock -->
         <div class="mt-4 pt-3 border-t border-slate-800/60 flex items-center justify-between text-[10px] font-mono text-slate-500">
-          <span>DED-ID-${p.serviceId}</span>
+          <span>DED-ID-${formatPersonnelId(p.id)}</span>
           <span class="tracking-widest">||| | ||||| || ||| |||| | |||</span>
           <span>DEFENSE ENERGY DEPT</span>
         </div>
