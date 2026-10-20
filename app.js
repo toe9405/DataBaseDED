@@ -1357,6 +1357,15 @@ function renderOrgChart() {
   const container = document.getElementById('orgchart-content');
   if (!container) return;
 
+  // จำตำแหน่งการเลื่อนก่อนวาดใหม่ (กันหน้าเด้งขึ้นบนสุดทุกครั้งที่ปรับผัง)
+  const prevWindowScrollX = window.scrollX;
+  const prevWindowScrollY = window.scrollY;
+  const prevEditor = document.getElementById('roster-editor-container');
+  const prevEditorScrollTop = prevEditor ? prevEditor.scrollTop : 0;
+  const prevMinHeight = container.style.minHeight;
+  // ล็อกความสูงชั่วคราว ไม่ให้หน้าสั้นลงตอน innerHTML ถูกล้าง แล้วเบราว์เซอร์ clamp scroll
+  container.style.minHeight = container.offsetHeight + 'px';
+
   initRosterState();
   const divisions = getAvailableRosterDivisions();
   const divPeople = peopleInRosterDivision(rosterDivision);
@@ -1785,6 +1794,16 @@ function renderOrgChart() {
   `;
 
   attachRosterDragEvents();
+
+  // คืนตำแหน่งการเลื่อนเดิม
+  const newEditor = document.getElementById('roster-editor-container');
+  if (newEditor) newEditor.scrollTop = prevEditorScrollTop;
+  window.scrollTo(prevWindowScrollX, prevWindowScrollY);
+  requestAnimationFrame(() => {
+    window.scrollTo(prevWindowScrollX, prevWindowScrollY);
+    if (newEditor) newEditor.scrollTop = prevEditorScrollTop;
+    container.style.minHeight = prevMinHeight;
+  });
 }
 
 /**
