@@ -855,10 +855,12 @@ function rosterSecondmentNote(p, div = rosterDivision) {
 
 function rosterSectionsOfDivision(div = rosterDivision) {
   const standard = typeof ENERGY_DEPT_STRUCTURE !== 'undefined' ? (ENERGY_DEPT_STRUCTURE.find(x => x.division === div)?.sections || []) : [];
-  const allSections = [...new Set([...standard, ...peopleInRosterDivision(div).map(p => rosterSectionOf(p, div))])];
+  const people = peopleInRosterDivision(div);
+  const allSections = [...new Set([...standard, ...people.map(p => rosterSectionOf(p, div))])];
   const namedSections = allSections.filter(s => s !== UNSPECIFIED_SECTION);
-  // ไม่แสดงหัวข้อ "ส่วนกลางกอง (ไม่ระบุแผนก)" ในผัง (ยกเว้นกองที่ไม่มีแผนกอื่นเลย จะได้ไม่ว่างเปล่า)
-  return namedSections.length ? namedSections : [UNSPECIFIED_SECTION];
+  // ส่วนกลางกอง (ไม่ระบุแผนก) อยู่บนสุดของผัง และแสดงเมื่อมีกำลังพลที่ไม่ได้ระบุแผนกอยู่จริง (หรือกองที่ไม่มีแผนกอื่นเลย)
+  const hasUnspecified = people.some(p => rosterSectionOf(p, div) === UNSPECIFIED_SECTION);
+  return (hasUnspecified || !namedSections.length) ? [UNSPECIFIED_SECTION, ...namedSections] : namedSections;
 }
 
 function rosterSectionLabel(section) {
@@ -1563,11 +1565,11 @@ function renderOrgChart() {
 
     return `
       <div class="border-t border-slate-800/80 pt-5 first:border-t-0 first:pt-0">
-        <h4 class="text-center text-sm font-bold text-indigo-300 uppercase tracking-wider mb-5 flex items-center justify-center gap-2">
+        ${sec === UNSPECIFIED_SECTION ? '' : `<h4 class="text-center text-sm font-bold text-indigo-300 uppercase tracking-wider mb-5 flex items-center justify-center gap-2">
           <span class="w-8 h-px bg-indigo-500/30"></span>
           ${rosterSectionLabel(sec)}
           <span class="w-8 h-px bg-indigo-500/30"></span>
-        </h4>
+        </h4>`}
         ${rowsPreviewHtml}
       </div>
     `;
@@ -1601,9 +1603,9 @@ function renderOrgChart() {
       <tr class="hover:bg-slate-800/40 transition">
         <td class="py-3 px-3 text-center text-xs font-semibold text-slate-400">${item.globalOrder}</td>
         <td class="py-3 px-3">
-          <span class="text-xs font-medium text-indigo-300 bg-indigo-950/40 border border-indigo-800/50 rounded-md px-2 py-0.5 whitespace-nowrap">
+          ${item.section === UNSPECIFIED_SECTION ? '<span class="text-slate-600">-</span>' : `<span class="text-xs font-medium text-indigo-300 bg-indigo-950/40 border border-indigo-800/50 rounded-md px-2 py-0.5 whitespace-nowrap">
             ${rosterSectionLabel(item.section)}
-          </span>
+          </span>`}
         </td>
         <td class="py-2 px-3">${photo}</td>
         <td class="py-3 px-3">
