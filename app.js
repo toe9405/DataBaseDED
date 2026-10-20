@@ -437,11 +437,11 @@ function handleFormDivisionChange(divName, selectedSection = null) {
   if (!found) return;
 
   if (found.sections.length === 1 && found.sections[0] === found.division) {
-    secSelect.innerHTML = `<option value="">ประจำ${escapeHtml(found.division)}</option>`;
+    secSelect.innerHTML = `<option value="">${escapeHtml(found.division)}</option>`;
     secSelect.disabled = true;
   } else {
     secSelect.disabled = false;
-    let html = `<option value="">ประจำ${escapeHtml(found.division)} (ไม่ระบุแผนก)</option>`;
+    let html = `<option value="">${escapeHtml(found.division)} (ไม่ระบุแผนก)</option>`;
     found.sections.forEach(sec => {
       const isSel = selectedSection === sec ? 'selected' : '';
       html += `<option value="${escapeHtml(sec)}" ${isSel}>${escapeHtml(sec)}</option>`;
@@ -856,10 +856,9 @@ function rosterSecondmentNote(p, div = rosterDivision) {
 function rosterSectionsOfDivision(div = rosterDivision) {
   const standard = typeof ENERGY_DEPT_STRUCTURE !== 'undefined' ? (ENERGY_DEPT_STRUCTURE.find(x => x.division === div)?.sections || []) : [];
   const allSections = [...new Set([...standard, ...peopleInRosterDivision(div).map(p => rosterSectionOf(p, div))])];
-  return [
-    UNSPECIFIED_SECTION,
-    ...allSections.filter(s => s !== UNSPECIFIED_SECTION)
-  ];
+  const namedSections = allSections.filter(s => s !== UNSPECIFIED_SECTION);
+  // ไม่แสดงหัวข้อ "ส่วนกลางกอง (ไม่ระบุแผนก)" ในผัง (ยกเว้นกองที่ไม่มีแผนกอื่นเลย จะได้ไม่ว่างเปล่า)
+  return namedSections.length ? namedSections : [UNSPECIFIED_SECTION];
 }
 
 function rosterSectionLabel(section) {
