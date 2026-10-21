@@ -99,6 +99,8 @@ async function loadRosterFromCloud() {
   return (data && !Array.isArray(data) && data.layout && typeof data.layout === 'object') ? data.layout : {};
 }
 
+let _rosterCloudTimer = null, _rosterSaving = false;  // หน้าผู้ใช้ดูอย่างเดียว ไม่มีการบันทึกผัง
+
 async function syncRosterFromCloud() {
   try {
     const cloud = await loadRosterFromCloud();
@@ -106,6 +108,37 @@ async function syncRosterFromCloud() {
   } catch (e) {
     console.warn('โหลดผังกำลังพลจากคลาวด์ไม่สำเร็จ ใช้ผังในเครื่องแทน:', e);
   }
+}
+
+// ดึงผังล่าสุดจากคลาวด์มาแสดง (ใช้ตอนเปิดมุมมองผัง / กลับมาที่แท็บ) เพื่อให้ทุกเครื่องตรงกัน
+async function refreshRosterFromCloud() {
+  if (_rosterCloudTimer || _rosterSaving) return;   // มีการแก้ไขที่ยังไม่ได้ส่งขึ้นคลาวด์ ห้ามทับ
+  try {
+    const cloud = await loadRosterFromCloud();
+    if (!Object.keys(cloud).length) return;
+    const next = JSON.stringify(cloud);
+    if (next === localStorage.getItem(ROSTER_STORAGE_KEY)) return;
+    localStorage.setItem(ROSTER_STORAGE_KEY, next);
+    if (typeof viewMode !== 'undefined' && viewMode === 'orgchart') renderOrgChart();
+  } catch (e) {
+    console.warn('รีเฟรชผังจากคลาวด์ไม่สำเร็จ:', e);
+  }
+}
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && typeof viewMode !== 'undefined' && viewMode === 'orgchart') refreshRosterFromCloud();
+});
+
+// ================= ทำความสะอาดข้อมูลที่ได้จาก Google Sheet =================
+// Sheet จะส่งเซลล์ที่หน้าตาเป็นตัวเลข (เช่น ชื่อ "4211") มาเป็น number ทำให้ .localeCompare() พัง
+// และทำให้หน้าเว็บวาดข้อมูลไม่ขึ้น จึงบังคับให้ช่องข้อความเป็น string เสมอ
+const PERSON_TEXT_FIELDS = ['id','branch','rank','firstName','lastName','serviceId','department','position','status','phone','email','notes','avatar','secondedTo','secondedToSection'];
+function sanitizePersonnelRecord(p) {
+  const o = Object.assign({}, p);
+  PERSON_TEXT_FIELDS.forEach(k => { o[k] = (o[k] === undefined || o[k] === null) ? '' : String(o[k]).trim(); });
+  o.rankTier = Number(o.rankTier) || 99;
+  o.joinedYear = (o.joinedYear === '' || o.joinedYear == null) ? '' : (Number(o.joinedYear) || '');
+  if (o.id) o.id = formatPersonnelId(o.id);
+  return o;
 }
 
 // Application State
@@ -159,17 +192,18 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 async function initData() {
   try {
-    personnelList = await loadPersonnelFromCloud();
+    // โหลดกำลังพลกับผังพร้อมกัน (เร็วกว่าโหลดต่อกัน)
+    const [cloudPeople] = await Promise.all([loadPersonnelFromCloud(), syncRosterFromCloud()]);
+    personnelList = cloudPeople.map(sanitizePersonnelRecord);
     personnelList = personnelList.filter(p => !p.rank || !p.rank.includes('พลทหาร'));
     personnelList.forEach(p => {
       if (p.id !== undefined && p.id !== null) p.id = formatPersonnelId(p.id);
     });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(personnelList)); // แคชไว้เผื่อออฟไลน์
-    await syncRosterFromCloud(); // ผังกำลังพลใช้ร่วมกันทุกเครื่อง
   } catch (e) {
     console.error('โหลดจากคลาวด์ไม่สำเร็จ, ใช้ข้อมูลแคชล่าสุดแทน:', e);
     const cached = localStorage.getItem(STORAGE_KEY);
-    personnelList = cached ? JSON.parse(cached) : [...INITIAL_PERSONNEL_DATA];
+    personnelList = (cached ? JSON.parse(cached) : [...INITIAL_PERSONNEL_DATA]).map(sanitizePersonnelRecord);
     personnelList.forEach(p => {
       if (p.id !== undefined && p.id !== null) p.id = formatPersonnelId(p.id);
     });
@@ -453,6 +487,7 @@ function setViewMode(mode) {
   // สำคัญ: ต้องเรียก renderApp() เพื่อให้ renderTable()/renderGrid() ทำงานจริง
   // ไม่งั้นแค่สลับการแสดง/ซ่อน div แต่เนื้อหาข้างในตาราง (tbody) จะยังว่างเปล่าอยู่
   renderApp();
+  if (mode === 'orgchart') refreshRosterFromCloud();
 }
 
 function clearAllFilters() {
@@ -1613,3 +1648,5 @@ function showToast(message, type = 'info') {
     setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 300);
   }, 3500);
 }
+// หน้าดูอย่างเดียว: รีเฟรชผังจากคลาวด์ทุก 60 วินาทีขณะเปิดมุมมองผัง
+setInterval(() => { if (!document.hidden && typeof viewMode !== 'undefined' && viewMode === 'orgchart') refreshRosterFromCloud(); }, 60000);
