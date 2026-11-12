@@ -174,6 +174,20 @@ function formatPersonnelId(id) {
   return str;
 }
 
+/**
+ * ค้นหาข้อมูลกำลังพลจาก ID (รองรับทั้งแบบเลข 4 หลักมี 0 นำหน้า และเลขลำดับธรรมดา)
+ */
+function findPersonnelById(pid) {
+  if (pid === undefined || pid === null || pid === '') return null;
+  const s = String(pid).trim();
+  const formatted = formatPersonnelId(s);
+  return personnelList.find(item => {
+    if (!item) return false;
+    const itemId = String(item.id).trim();
+    return itemId === s || itemId === formatted || formatPersonnelId(itemId) === formatted;
+  }) || null;
+}
+
 // สร้างเลขประจำตัว 4 หลักถัดไป (ไม่มีตัวอักษรนำหน้า) โดยหาเลขที่มากที่สุดในระบบแล้ว +1
 function generateNextPersonnelId() {
   let maxNum = 0;
@@ -1107,7 +1121,7 @@ function moveRosterPerson(personId, targetSection, targetRowId, div = rosterDivi
 
   saveRosterLayout(false);
   renderOrgChart();
-  const p = personnelList.find(item => String(item.id) === pidStr);
+  const p = findPersonnelById(pidStr);
   if (p) {
     showToast(`ย้าย ${p.rank || ''} ${p.firstName || ''} เข้าแถวเรียบร้อย`, 'info');
   }
@@ -1144,7 +1158,7 @@ function insertRosterPersonAt(personId, targetSection, targetRowId, targetPerson
 
   saveRosterLayout(false);
   renderOrgChart();
-  const p = personnelList.find(item => String(item.id) === pidStr);
+  const p = findPersonnelById(pidStr);
   if (p) {
     showToast(`จัดตำแหน่ง ${p.rank || ''} ${p.firstName || ''} เรียบร้อย`, 'info');
   }
@@ -1251,8 +1265,8 @@ function sortRosterRowByRank(section, rowId, div = rosterDivision) {
   if (!row || row.people.length <= 1) return;
 
   row.people.sort((a, b) => {
-    const pA = personnelList.find(p => String(p.id) === String(a));
-    const pB = personnelList.find(p => String(p.id) === String(b));
+    const pA = findPersonnelById(a);
+    const pB = findPersonnelById(b);
     const tA = pA ? (Number(pA.rankTier) || 99) : 99;
     const tB = pB ? (Number(pB.rankTier) || 99) : 99;
     return tA - tB;
@@ -1422,7 +1436,7 @@ function getAssignedRosterPersonnel(div = rosterDivision) {
     const layout = rosterLayoutOf(sec, div);
     layout.rows.forEach((row, rowIdx) => {
       row.people.forEach((pid, orderInRow) => {
-        const p = personnelList.find(item => String(item.id) === String(pid));
+        const p = findPersonnelById(pid);
         if (p) {
           list.push({
             globalOrder: globalOrder++,
@@ -1477,12 +1491,12 @@ function renderOrgChart() {
 
     const rowsHtml = targetRows.map((row, index) => {
       const cardsHtml = row.people.map((pid, personOrder) => {
-        const p = personnelList.find(item => String(item.id) === String(pid));
+        const p = findPersonnelById(pid);
         if (!p) return '';
         const note = rosterSecondmentNote(p, rosterDivision);
-        const photo = p.avatar
-          ? `<img src="${escapeHtml(p.avatar)}" style="width:52px;height:65px;object-fit:cover;border-radius:0.375rem" class="bg-slate-700 flex-shrink-0" onerror="this.src='https://ded.mod.go.th/DED/media/unit-activities/logo-ded.png?ext=.png'">`
-          : `<div style="width:52px;height:65px;border-radius:0.375rem" class="bg-indigo-500/20 text-indigo-300 flex items-center justify-center flex-shrink-0"><i class="fa-solid fa-user"></i></div>`;
+        const avatarSrc = resolveAvatarUrl(p);
+        const branchFallback = getDefaultAvatarForBranch(p.branch);
+        const photo = `<img src="${avatarSrc}" style="width:52px;height:65px;object-fit:cover;border-radius:0.375rem" class="bg-slate-700 flex-shrink-0" onerror="this.src='${branchFallback}'">`;
         
         return `
           <div draggable="true" class="roster-person-card cursor-grab active:cursor-grabbing rounded-lg bg-slate-800 border border-slate-700 p-2 flex gap-2 items-center hover:border-amber-400/50 transition relative group" data-person-id="${escapeHtml(String(p.id))}">
@@ -1570,7 +1584,7 @@ function renderOrgChart() {
         </p>
         <div class="grid gap-2 grid-cols-1 sm:grid-cols-2">
           ${removedIds.map(pid => {
-            const p = personnelList.find(item => String(item.id) === String(pid));
+            const p = findPersonnelById(pid);
             if (!p) return '';
             return `
               <div class="flex items-center gap-2 rounded-lg bg-slate-800/80 border border-slate-700 p-2">
@@ -1624,12 +1638,12 @@ function renderOrgChart() {
     const rowsPreviewHtml = targetRows.map(row => {
       if (!row.people.length) return '';
       const cardsHtml = row.people.map(pid => {
-        const p = personnelList.find(item => String(item.id) === String(pid));
+        const p = findPersonnelById(pid);
         if (!p) return '';
         const note = rosterSecondmentNote(p, rosterDivision);
-        const photo = p.avatar
-          ? `<img src="${escapeHtml(p.avatar)}" class="w-full h-full object-cover" onerror="this.src='https://ded.mod.go.th/DED/media/unit-activities/logo-ded.png?ext=.png'">`
-          : `<div class="w-full h-full flex items-center justify-center text-slate-500 text-3xl bg-slate-900"><i class="fa-solid fa-user"></i></div>`;
+        const avatarSrc = resolveAvatarUrl(p);
+        const branchFallback = getDefaultAvatarForBranch(p.branch);
+        const photo = `<img src="${avatarSrc}" class="w-full h-full object-cover" onerror="this.src='${branchFallback}'">`;
 
         return `
           <div class="roster-card text-center flex flex-col items-center max-w-[190px] mx-auto">
@@ -1683,9 +1697,9 @@ function renderOrgChart() {
   // 5. Bottom Table Rows (Assigned Personnel in Chart)
   const bottomTableRowsHtml = assignedList.map(item => {
     const p = item.person;
-    const photo = p.avatar
-      ? `<img src="${escapeHtml(p.avatar)}" class="w-9 h-11 object-cover rounded bg-slate-800 border border-slate-700" onerror="this.src='https://ded.mod.go.th/DED/media/unit-activities/logo-ded.png?ext=.png'">`
-      : `<div class="w-9 h-11 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-500 text-xs"><i class="fa-solid fa-user"></i></div>`;
+    const avatarSrc = resolveAvatarUrl(p);
+    const branchFallback = getDefaultAvatarForBranch(p.branch);
+    const photo = `<img src="${avatarSrc}" class="w-9 h-11 object-cover rounded bg-slate-800 border border-slate-700" onerror="this.src='${branchFallback}'">`;
     
     const rowSelectOptions = allRowOptions.map(opt => {
       const isSelected = opt.value === `${item.section}|${item.rowId}`;
