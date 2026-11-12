@@ -157,6 +157,20 @@ function formatPersonnelId(id) {
   return str;
 }
 
+/**
+ * ค้นหาข้อมูลกำลังพลจาก ID (รองรับทั้งแบบเลข 4 หลักมี 0 นำหน้า และเลขลำดับธรรมดา)
+ */
+function findPersonnelById(pid) {
+  if (pid === undefined || pid === null || pid === '') return null;
+  const s = String(pid).trim();
+  const formatted = formatPersonnelId(s);
+  return personnelList.find(item => {
+    if (!item) return false;
+    const itemId = String(item.id).trim();
+    return itemId === s || itemId === formatted || formatPersonnelId(itemId) === formatted;
+  }) || null;
+}
+
 // สร้างเลขประจำตัว 4 หลักถัดไป (ไม่มีตัวอักษรนำหน้า) โดยหาเลขที่มากที่สุดในระบบแล้ว +1
 function generateNextPersonnelId() {
   let maxNum = 0;
@@ -790,7 +804,7 @@ function getAssignedRosterPersonnel(div = rosterDivision) {
     const layout = rosterLayoutOf(sec, div);
     layout.rows.forEach((row, rowIdx) => {
       row.people.forEach((pid, orderInRow) => {
-        const p = personnelList.find(item => String(item.id) === String(pid));
+        const p = findPersonnelById(pid);
         if (p) {
           list.push({
             globalOrder: globalOrder++,
@@ -836,12 +850,12 @@ function renderOrgChart() {
     const rowsPreviewHtml = targetRows.map(row => {
       if (!row.people.length) return '';
       const cardsHtml = row.people.map(pid => {
-        const p = personnelList.find(item => String(item.id) === String(pid));
+        const p = findPersonnelById(pid);
         if (!p) return '';
         const note = rosterSecondmentNote(p, rosterDivision);
-        const photo = p.avatar
-          ? `<img src="${escapeHtml(p.avatar)}" class="w-full h-full object-cover cursor-pointer" onclick="viewPersonnel('${escapeHtml(p.id)}')" onerror="this.src='https://ded.mod.go.th/DED/media/unit-activities/logo-ded.png?ext=.png'">`
-          : `<div class="w-full h-full flex items-center justify-center text-slate-500 text-3xl bg-slate-900 cursor-pointer" onclick="viewPersonnel('${escapeHtml(p.id)}')"><i class="fa-solid fa-user"></i></div>`;
+        const avatarSrc = resolveAvatarUrl(p);
+        const branchFallback = getDefaultAvatarForBranch(p.branch);
+        const photo = `<img src="${avatarSrc}" class="w-full h-full object-cover cursor-pointer" onclick="viewPersonnel('${escapeHtml(p.id)}')" onerror="this.src='${branchFallback}'">`;
 
         return `
           <div class="roster-card text-center flex flex-col items-center max-w-[190px] mx-auto">
@@ -883,9 +897,9 @@ function renderOrgChart() {
   // 2. Bottom Table Rows
   const bottomTableRowsHtml = assignedList.map(item => {
     const p = item.person;
-    const photo = p.avatar
-      ? `<img src="${escapeHtml(p.avatar)}" class="w-9 h-11 object-cover rounded bg-slate-800 border border-slate-700" onerror="this.src='https://ded.mod.go.th/DED/media/unit-activities/logo-ded.png?ext=.png'">`
-      : `<div class="w-9 h-11 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-500 text-xs"><i class="fa-solid fa-user"></i></div>`;
+    const avatarSrc = resolveAvatarUrl(p);
+    const branchFallback = getDefaultAvatarForBranch(p.branch);
+    const photo = `<img src="${avatarSrc}" class="w-9 h-11 object-cover rounded bg-slate-800 border border-slate-700" onerror="this.src='${branchFallback}'">`;
 
     return `
       <tr class="hover:bg-slate-800/40 transition">
