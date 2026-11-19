@@ -2601,10 +2601,7 @@ async function processDirectAvatarUpload(personnelId, dataUrl, refreshViewModal 
 
     // อัปโหลดเขียนทับไฟล์เดิมใน Drive
     const cloudUrl = await uploadPhotoToCloud(dataUrl, `${personnelId}.${ext}`, mimeType, personnelId, oldFileId);
-    
-    // เพิ่ม timestamp เพื่อบังคับให้เบราว์เซอร์โหลดรูปใหม่ทันที ไม่ติดแคชรูปเก่า
-    const cacheBuster = `&v=${Date.now()}`;
-    const directUrl = cloudUrl.includes('?') ? `${cloudUrl}${cacheBuster}` : `${cloudUrl}?${cacheBuster}`;
+    const directUrl = cloudUrl;
 
     // อัปเดตในข้อมูลกำลังพล
     if (oldRecord) {
