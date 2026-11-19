@@ -2135,6 +2135,12 @@ function renderTable(list) {
 
     return `
       <tr class="hover:bg-slate-900/60 transition">
+		<td class="py-3 px-3 text-center">
+  <input type="checkbox" class="row-select w-4 h-4 accent-amber-500 cursor-pointer"
+         data-id="${escapeHtml(String(p.id))}"
+         ${selectedIds.has(String(p.id)) ? 'checked' : ''}
+         onchange="toggleRowSelect('${escapeHtml(String(p.id))}', this.checked)">
+</td>
         <!-- Personnel Info -->
         <td class="py-3 px-4">
           <div class="flex items-center gap-3">
@@ -2202,6 +2208,7 @@ function renderTable(list) {
       </tr>
     `;
   }).join('');
+  updateSelectionUI();
 }
 
 // ================= CRUD MODAL HANDLERS =================
@@ -3218,4 +3225,82 @@ function showToast(message, type = 'info') {
       if (toast.parentNode) toast.parentNode.removeChild(toast);
     }, 300);
   }, 3500);
+}
+// ================= เลือกแถว & ส่งออก Excel (CSV) =================
+const selectedIds = new Set();
+
+function toggleRowSelect(id, checked) {
+  if (checked) selectedIds.add(String(id));
+  else selectedIds.delete(String(id));
+  updateSelectionUI();
+}
+
+// เลือก/ยกเลิกทั้งหมดเฉพาะรายการที่กรองแสดงอยู่
+function toggleSelectAll(checked) {
+  getFilteredAndSortedPersonnel().forEach(p => {
+    if (checked) selectedIds.add(String(p.id));
+    else selectedIds.delete(String(p.id));
+  });
+  document.querySelectorAll('.row-select').forEach(cb => { cb.checked = checked; });
+  updateSelectionUI();
+}
+
+function updateSelectionUI() {
+  const countEl = document.getElementById('selected-count');
+  if (countEl) countEl.textContent = selectedIds.size;
+
+  const btn = document.getElementById('btn-export-selected');
+  if (btn) btn.disabled = selectedIds.size === 0;
+
+  const all = document.getElementById('select-all-rows');
+  if (all) {
+    const visible = getFilteredAndSortedPersonnel();
+    const selectedVisible = visible.filter(p => selectedIds.has(String(p.id))).length;
+    all.checked = visible.length > 0 && selectedVisible === visible.length;
+    all.indeterminate = selectedVisible > 0 && selectedVisible < visible.length;
+  }
+}
+
+function csvCell_(v) {
+  const s = String(v === undefined || v === null ? '' : v);
+  // กัน CSV/Excel formula injection
+  const safe = /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
+  return '"' + safe.replace(/"/g, '""') + '"';
+}
+
+function downloadPersonnelCsv_(list) {
+  if (!list.length) {
+    showToast('ไม่มีข้อมูลให้ส่งออก', 'error');
+    return;
+  }
+  const header = ['ยศ', 'ชื่อ', 'นามสกุล', 'ตำแหน่ง'];
+  const rows = list.map(p => [p.rank, p.firstName, p.lastName, p.position]);
+  const csv = [header, ...rows].map(r => r.map(csvCell_).join(',')).join('\r\n');
+
+  // \uFEFF = BOM ให้ Excel อ่านภาษาไทย (UTF-8) ถูกต้อง
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const now = new Date();
+  const d = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `DED-Personnel_${d}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast(`ส่งออก ${list.length} รายการเรียบร้อย`, 'success');
+}
+
+function exportSelectedToExcel() {
+  // เรียงตามลำดับยศเหมือนที่แสดงในตาราง เฉพาะที่ติ๊กไว้
+  const list = [...personnelList]
+    .filter(p => selectedIds.has(String(p.id)))
+    .sort((a, b) => (a.rankTier - b.rankTier) || String(a.firstName).localeCompare(String(b.firstName), 'th'));
+  downloadPersonnelCsv_(list);
+}
+
+function exportAllFilteredToExcel() {
+  downloadPersonnelCsv_(getFilteredAndSortedPersonnel());
 }
