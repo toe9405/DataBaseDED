@@ -153,9 +153,18 @@ function sanitizePersonnelRecord(p) {
   const o = Object.assign({}, p);
   PERSON_TEXT_FIELDS.forEach(k => { o[k] = (o[k] === undefined || o[k] === null) ? '' : String(o[k]).trim(); });
   o.rankTier = Number(o.rankTier) || 99;
+  o.weight = Number(o.weight) || 9999; // น้ำหนักลำดับ: น้อย = ขึ้นก่อน (ว่าง = 9999)
   o.joinedYear = (o.joinedYear === '' || o.joinedYear == null) ? '' : (Number(o.joinedYear) || '');
   if (o.id) o.id = formatPersonnelId(o.id);
   return o;
+}
+
+// เปรียบเทียบลำดับ: Tier (ยศ) -> weight (น้ำหนัก น้อย=ขึ้นก่อน) ใช้ตัดสินเมื่อยศเท่ากัน
+function compareByRankWeight(a, b) {
+  const ta = Number(a.rankTier) || 99, tb = Number(b.rankTier) || 99;
+  if (ta !== tb) return ta - tb;
+  const wa = Number(a.weight) || 9999, wb = Number(b.weight) || 9999;
+  return wa - wb;
 }
 
 // Application State
@@ -820,7 +829,11 @@ function getFilteredAndSortedPersonnel() {
         if (a.rankTier !== b.rankTier) {
           return a.rankTier - b.rankTier;
         }
-        // หากยศเท่ากัน ให้เรียงตามปีรับราชการ (อาวุโสกว่ามาก่อน)
+        // ยศเท่ากัน -> ดูน้ำหนัก (weight) ก่อน
+        if ((a.weight || 9999) !== (b.weight || 9999)) {
+          return (a.weight || 9999) - (b.weight || 9999);
+        }
+        // น้ำหนักเท่ากัน ให้เรียงตามปีรับราชการ (อาวุโสกว่ามาก่อน)
         if (a.joinedYear && b.joinedYear && a.joinedYear !== b.joinedYear) {
           return a.joinedYear - b.joinedYear;
         }
@@ -830,6 +843,9 @@ function getFilteredAndSortedPersonnel() {
         // ยศต่ำสุดไปสูงที่สุด
         if (a.rankTier !== b.rankTier) {
           return b.rankTier - a.rankTier;
+        }
+        if ((a.weight || 9999) !== (b.weight || 9999)) {
+          return (b.weight || 9999) - (a.weight || 9999);
         }
         return a.firstName.localeCompare(b.firstName, 'th');
 
@@ -1016,7 +1032,7 @@ function defaultRosterRows(people) {
     { id: generateRosterRowId(), capacity: 3, people: [] }
   ];
   [...people]
-    .sort((a, b) => (Number(a.rankTier) || 99) - (Number(b.rankTier) || 99))
+    .sort(compareByRankWeight)
     .forEach((p, i) => {
       const rowIdx = i === 0 ? 0 : i <= 2 ? 1 : 2;
       result[rowIdx].people.push(String(p.id));
@@ -1265,11 +1281,9 @@ function sortRosterRowByRank(section, rowId, div = rosterDivision) {
   if (!row || row.people.length <= 1) return;
 
   row.people.sort((a, b) => {
-    const pA = findPersonnelById(a);
-    const pB = findPersonnelById(b);
-    const tA = pA ? (Number(pA.rankTier) || 99) : 99;
-    const tB = pB ? (Number(pB.rankTier) || 99) : 99;
-    return tA - tB;
+    const pA = findPersonnelById(a) || {};
+    const pB = findPersonnelById(b) || {};
+    return compareByRankWeight(pA, pB);
   });
 
   saveRosterLayout(false);
@@ -1287,7 +1301,7 @@ function sortRosterSectionByRank(section, div = rosterDivision) {
   const activePeople = secPeople.filter(p => !removedSet.has(String(p.id)));
 
   // จัดเรียงตาม rankTier
-  activePeople.sort((a, b) => (Number(a.rankTier) || 99) - (Number(b.rankTier) || 99));
+  activePeople.sort(compareByRankWeight);
 
   if (!layout.rows.length) {
     layout.rows = defaultRosterRows(activePeople);
@@ -2135,12 +2149,6 @@ function renderTable(list) {
 
     return `
       <tr class="hover:bg-slate-900/60 transition">
-		<td class="py-3 px-3 text-center">
-  <input type="checkbox" class="row-select w-4 h-4 accent-amber-500 cursor-pointer"
-         data-id="${escapeHtml(String(p.id))}"
-         ${selectedIds.has(String(p.id)) ? 'checked' : ''}
-         onchange="toggleRowSelect('${escapeHtml(String(p.id))}', this.checked)">
-</td>
         <!-- Personnel Info -->
         <td class="py-3 px-4">
           <div class="flex items-center gap-3">
@@ -2208,7 +2216,6 @@ function renderTable(list) {
       </tr>
     `;
   }).join('');
-  updateSelectionUI();
 }
 
 // ================= CRUD MODAL HANDLERS =================
@@ -2271,6 +2278,7 @@ function editPersonnel(id) {
   updateFormRanks(p.branch, p.rank);
 
   document.getElementById('form-service-id').value = p.serviceId || '';
+  document.getElementById('form-weight').value = (p.weight && p.weight !== 9999) ? p.weight : '';
   document.getElementById('form-first-name').value = p.firstName || '';
   document.getElementById('form-last-name').value = p.lastName || '';
   document.getElementById('form-status').value = p.status || 'active';
@@ -2608,7 +2616,10 @@ async function processDirectAvatarUpload(personnelId, dataUrl, refreshViewModal 
 
     // อัปโหลดเขียนทับไฟล์เดิมใน Drive
     const cloudUrl = await uploadPhotoToCloud(dataUrl, `${personnelId}.${ext}`, mimeType, personnelId, oldFileId);
-    const directUrl = cloudUrl;
+    
+    // เพิ่ม timestamp เพื่อบังคับให้เบราว์เซอร์โหลดรูปใหม่ทันที ไม่ติดแคชรูปเก่า
+    const cacheBuster = `&v=${Date.now()}`;
+    const directUrl = cloudUrl.includes('?') ? `${cloudUrl}${cacheBuster}` : `${cloudUrl}?${cacheBuster}`;
 
     // อัปเดตในข้อมูลกำลังพล
     if (oldRecord) {
@@ -2653,6 +2664,7 @@ async function handleFormSubmit(event) {
   const firstName = document.getElementById('form-first-name').value.trim();
   const lastName = document.getElementById('form-last-name').value.trim();
   const serviceId = document.getElementById('form-service-id').value.trim();
+  const weight = parseInt(document.getElementById('form-weight').value, 10) || 9999;
   const department = document.getElementById('form-department').value.trim();
   const position = getFormPositionValue();
   const status = document.getElementById('form-status').value;
@@ -2727,6 +2739,7 @@ async function handleFormSubmit(event) {
         branch,
         rank,
         rankTier,
+        weight,
         firstName,
         lastName,
         serviceId,
@@ -2750,6 +2763,7 @@ async function handleFormSubmit(event) {
       branch,
       rank,
       rankTier,
+      weight,
       firstName,
       lastName,
       serviceId,
@@ -3225,82 +3239,4 @@ function showToast(message, type = 'info') {
       if (toast.parentNode) toast.parentNode.removeChild(toast);
     }, 300);
   }, 3500);
-}
-// ================= เลือกแถว & ส่งออก Excel (CSV) =================
-const selectedIds = new Set();
-
-function toggleRowSelect(id, checked) {
-  if (checked) selectedIds.add(String(id));
-  else selectedIds.delete(String(id));
-  updateSelectionUI();
-}
-
-// เลือก/ยกเลิกทั้งหมดเฉพาะรายการที่กรองแสดงอยู่
-function toggleSelectAll(checked) {
-  getFilteredAndSortedPersonnel().forEach(p => {
-    if (checked) selectedIds.add(String(p.id));
-    else selectedIds.delete(String(p.id));
-  });
-  document.querySelectorAll('.row-select').forEach(cb => { cb.checked = checked; });
-  updateSelectionUI();
-}
-
-function updateSelectionUI() {
-  const countEl = document.getElementById('selected-count');
-  if (countEl) countEl.textContent = selectedIds.size;
-
-  const btn = document.getElementById('btn-export-selected');
-  if (btn) btn.disabled = selectedIds.size === 0;
-
-  const all = document.getElementById('select-all-rows');
-  if (all) {
-    const visible = getFilteredAndSortedPersonnel();
-    const selectedVisible = visible.filter(p => selectedIds.has(String(p.id))).length;
-    all.checked = visible.length > 0 && selectedVisible === visible.length;
-    all.indeterminate = selectedVisible > 0 && selectedVisible < visible.length;
-  }
-}
-
-function csvCell_(v) {
-  const s = String(v === undefined || v === null ? '' : v);
-  // กัน CSV/Excel formula injection
-  const safe = /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
-  return '"' + safe.replace(/"/g, '""') + '"';
-}
-
-function downloadPersonnelCsv_(list) {
-  if (!list.length) {
-    showToast('ไม่มีข้อมูลให้ส่งออก', 'error');
-    return;
-  }
-  const header = ['ยศ', 'ชื่อ', 'นามสกุล', 'ตำแหน่ง'];
-  const rows = list.map(p => [p.rank, p.firstName, p.lastName, p.position]);
-  const csv = [header, ...rows].map(r => r.map(csvCell_).join(',')).join('\r\n');
-
-  // \uFEFF = BOM ให้ Excel อ่านภาษาไทย (UTF-8) ถูกต้อง
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const now = new Date();
-  const d = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `DED-Personnel_${d}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-  showToast(`ส่งออก ${list.length} รายการเรียบร้อย`, 'success');
-}
-
-function exportSelectedToExcel() {
-  // เรียงตามลำดับยศเหมือนที่แสดงในตาราง เฉพาะที่ติ๊กไว้
-  const list = [...personnelList]
-    .filter(p => selectedIds.has(String(p.id)))
-    .sort((a, b) => (a.rankTier - b.rankTier) || String(a.firstName).localeCompare(String(b.firstName), 'th'));
-  downloadPersonnelCsv_(list);
-}
-
-function exportAllFilteredToExcel() {
-  downloadPersonnelCsv_(getFilteredAndSortedPersonnel());
 }
