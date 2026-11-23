@@ -1147,9 +1147,13 @@ function renderTable(list) {
     const branch = BRANCH_INFO[p.branch] || BRANCH_INFO.army;
     const tierBadge = getRankTierBadge(p.rankTier, p.branch, p.rank);
     const statusInfo = getStatusInfo(p.status);
+    const isSel = exportSelectedIds.has(String(p.id));
 
     return `
-      <tr class="hover:bg-slate-900/60 transition">
+      <tr data-row-id="${escapeHtml(String(p.id))}" class="hover:bg-slate-900/60 transition ${isSel ? 'bg-amber-500/10' : ''}">
+        <td class="py-3 px-3 text-center">
+          <input type="checkbox" ${isSel ? 'checked' : ''} onchange="toggleSelectPerson('${escapeHtml(String(p.id))}', this.checked)" class="w-4 h-4 accent-amber-500 cursor-pointer" title="เลือกเพื่อส่งออก">
+        </td>
         <td class="py-3 px-4">
           <div class="flex items-center gap-3">
             <div class="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 border border-slate-700">
@@ -1199,6 +1203,90 @@ function renderTable(list) {
       </tr>
     `;
   }).join('');
+
+  updateExportBar();
+}
+
+// ================= เลือกกำลังพลเพื่อส่งออก (มุมมองตาราง) =================
+// เก็บรหัส ID ที่ติ๊กไว้ — คงอยู่แม้เปลี่ยนตัวกรอง/ค้นหา จนกว่าจะกด "ล้างที่เลือก"
+const exportSelectedIds = new Set();
+
+function toggleSelectPerson(id, checked) {
+  const key = String(id);
+  if (checked) exportSelectedIds.add(key); else exportSelectedIds.delete(key);
+  const row = document.querySelector(`tr[data-row-id="${CSS.escape(key)}"]`);
+  if (row) row.classList.toggle('bg-amber-500/10', checked);
+  updateExportBar();
+}
+
+function toggleSelectAllVisible(checked) {
+  getFilteredAndSortedPersonnel().forEach(p => {
+    if (checked) exportSelectedIds.add(String(p.id)); else exportSelectedIds.delete(String(p.id));
+  });
+  renderApp();
+}
+
+function clearExportSelection() {
+  exportSelectedIds.clear();
+  renderApp();
+}
+
+function updateExportBar() {
+  const countEl = document.getElementById('export-selected-count');
+  if (countEl) countEl.textContent = exportSelectedIds.size;
+
+  const exportBtn = document.getElementById('btn-export-selected');
+  const clearBtn = document.getElementById('btn-clear-selection');
+  const none = exportSelectedIds.size === 0;
+  [exportBtn, clearBtn].forEach(btn => {
+    if (!btn) return;
+    btn.disabled = none;
+    btn.classList.toggle('opacity-40', none);
+    btn.classList.toggle('cursor-not-allowed', none);
+  });
+
+  // สถานะช่องติ๊ก "เลือกทั้งหมด" (ติ๊กครบ / ติ๊กบางส่วน / ไม่ติ๊ก)
+  const allBox = document.getElementById('select-all-checkbox');
+  if (allBox) {
+    const visible = getFilteredAndSortedPersonnel();
+    const selectedVisible = visible.filter(p => exportSelectedIds.has(String(p.id))).length;
+    allBox.checked = visible.length > 0 && selectedVisible === visible.length;
+    allBox.indeterminate = selectedVisible > 0 && selectedVisible < visible.length;
+  }
+}
+
+/**
+ * ส่งออกเฉพาะกำลังพลที่ติ๊กเลือก เป็น CSV (เปิดด้วย Excel ได้)
+ * คอลัมน์: ยศ, ชื่อ, นามสกุล, ตำแหน่ง — เรียงตามชั้นยศ แล้วตามน้ำหนัก
+ */
+function exportSelectedCSV() {
+  const list = personnelList
+    .filter(p => exportSelectedIds.has(String(p.id)))
+    .sort((a, b) => compareByRankWeight(a, b) || String(a.firstName).localeCompare(String(b.firstName), 'th'));
+
+  if (!list.length) {
+    showToast('กรุณาติ๊กเลือกกำลังพลที่ต้องการส่งออกก่อน', 'error');
+    return;
+  }
+
+  const q = v => '"' + String(v === undefined || v === null ? '' : v).replace(/"/g, '""') + '"';
+  const header = ['ยศ', 'ชื่อ', 'นามสกุล', 'ตำแหน่ง'];
+  const rows = list.map(p => [q(p.rank), q(p.firstName), q(p.lastName), q(p.position)].join(','));
+
+  // \uFEFF = BOM ให้ Excel อ่านภาษาไทยถูกต้อง
+  const csv = '\uFEFF' + header.map(q).join(',') + '\r\n' + rows.join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const now = new Date();
+  const d = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `personnel_selected_${d}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  showToast(`ส่งออกกำลังพลที่เลือก ${list.length} ราย เรียบร้อย`, 'success');
 }
 
 // ================= ADD-ONLY MODAL HANDLERS =================
